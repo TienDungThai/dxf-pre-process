@@ -1,5 +1,7 @@
+import math
+
 from dxf_cleaner.config import Config
-from dxf_cleaner.reader import determine_unit_scale
+from dxf_cleaner.reader import determine_unit_scale, convert_simple_entity
 
 
 def test_insunits_inch_gives_scale_25_4(new_doc):
@@ -37,3 +39,39 @@ def test_unsupported_insunits_warns_and_defaults_to_mm(new_doc):
     scale, diag = determine_unit_scale(new_doc, Config())
     assert scale == 1.0
     assert diag.code == "UNSUPPORTED_INSUNITS"
+
+
+def test_convert_line(new_doc):
+    msp = new_doc.modelspace()
+    line = msp.add_line((0, 0), (1, 2))
+    contour = convert_simple_entity(line)
+    assert contour.is_closed is False
+    assert len(contour.segments) == 1
+    assert contour.segments[0].kind == "line"
+    assert contour.segments[0].start == (0.0, 0.0)
+    assert contour.segments[0].end == (1.0, 2.0)
+
+
+def test_convert_arc_degrees_to_radians_and_ccw(new_doc):
+    msp = new_doc.modelspace()
+    arc = msp.add_arc(center=(0, 0), radius=2.0, start_angle=0, end_angle=90)
+    contour = convert_simple_entity(arc)
+    assert contour.is_closed is False
+    seg = contour.segments[0]
+    assert seg.kind == "arc"
+    assert seg.ccw is True
+    assert math.isclose(seg.start[0], 2.0, abs_tol=1e-9)
+    assert math.isclose(seg.start[1], 0.0, abs_tol=1e-9)
+    assert math.isclose(seg.end[0], 0.0, abs_tol=1e-9)
+    assert math.isclose(seg.end[1], 2.0, abs_tol=1e-9)
+
+
+def test_convert_circle_becomes_two_arc_closed_contour(new_doc):
+    msp = new_doc.modelspace()
+    circle = msp.add_circle(center=(1, 1), radius=3.0)
+    contour = convert_simple_entity(circle)
+    assert contour.is_closed is True
+    assert len(contour.segments) == 2
+    assert all(seg.kind == "arc" for seg in contour.segments)
+    assert all(seg.radius == 3.0 for seg in contour.segments)
+    assert all(seg.center == (1.0, 1.0) for seg in contour.segments)
