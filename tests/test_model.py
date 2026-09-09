@@ -100,3 +100,46 @@ def test_contour_to_shapely_open_gives_line_string():
     contour = Contour(segments=[seg], is_closed=False, source_layer="0", source_handle="1")
     line = contour.to_shapely(arc_tolerance=0.01)
     assert isinstance(line, LineString)
+
+
+# Task 4: contour_bbox, contour_signed_area, contour_as_full_circle
+from dxf_cleaner.model import contour_bbox, contour_signed_area, contour_as_full_circle
+
+
+def _unit_square_ccw() -> Contour:
+    pts = [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)]
+    segs = [Segment(kind="line", start=pts[i], end=pts[(i + 1) % 4]) for i in range(4)]
+    return Contour(segments=segs, is_closed=True, source_layer="0", source_handle="1")
+
+
+def test_contour_bbox_unit_square():
+    assert contour_bbox(_unit_square_ccw()) == (0.0, 0.0, 1.0, 1.0)
+
+
+def test_contour_signed_area_ccw_is_positive():
+    assert math.isclose(contour_signed_area(_unit_square_ccw()), 1.0, abs_tol=1e-9)
+
+
+def test_contour_signed_area_cw_is_negative():
+    square = _unit_square_ccw()
+    square.segments = list(reversed([
+        Segment(kind="line", start=s.end, end=s.start) for s in square.segments
+    ]))
+    assert math.isclose(contour_signed_area(square), -1.0, abs_tol=1e-9)
+
+
+def test_contour_as_full_circle_detects_two_arc_circle():
+    center = (0.0, 0.0)
+    radius = 5.0
+    seg1 = Segment(kind="arc", start=(5.0, 0.0), end=(-5.0, 0.0), center=center, radius=radius, ccw=True)
+    seg2 = Segment(kind="arc", start=(-5.0, 0.0), end=(5.0, 0.0), center=center, radius=radius, ccw=True)
+    contour = Contour(segments=[seg1, seg2], is_closed=True, source_layer="0", source_handle="1")
+    result = contour_as_full_circle(contour)
+    assert result is not None
+    got_center, got_radius = result
+    assert math.isclose(got_center[0], 0.0, abs_tol=1e-9)
+    assert math.isclose(got_radius, 5.0, abs_tol=1e-9)
+
+
+def test_contour_as_full_circle_rejects_non_circle():
+    assert contour_as_full_circle(_unit_square_ccw()) is None

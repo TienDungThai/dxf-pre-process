@@ -109,3 +109,41 @@ def discretize_contour(contour: Contour, tolerance: float) -> list[Point]:
         seg_points = discretize_arc(seg, tolerance) if seg.kind == "arc" else [seg.start, seg.end]
         points.extend(seg_points if i == 0 else seg_points[1:])
     return points
+
+
+def contour_bbox(contour: Contour, arc_tolerance: float = 0.02) -> tuple[float, float, float, float]:
+    points = discretize_contour(contour, arc_tolerance)
+    xs = [p[0] for p in points]
+    ys = [p[1] for p in points]
+    return (min(xs), min(ys), max(xs), max(ys))
+
+
+def contour_signed_area(contour: Contour, arc_tolerance: float = 0.02) -> float:
+    """Shoelace formula over the discretized boundary. Positive area = CCW winding."""
+    points = discretize_contour(contour, arc_tolerance)
+    n = len(points)
+    area = 0.0
+    for i in range(n):
+        x1, y1 = points[i]
+        x2, y2 = points[(i + 1) % n]
+        area += x1 * y2 - x2 * y1
+    return area / 2.0
+
+
+def contour_as_full_circle(contour: Contour, tolerance: float = 1e-6) -> tuple[Point, float] | None:
+    """If this closed 2-arc contour is exactly a full circle (as produced when reading
+    a CIRCLE entity, or re-detected after flatten/weld), return (center, radius)."""
+    if not contour.is_closed or len(contour.segments) != 2:
+        return None
+    s0, s1 = contour.segments
+    if s0.kind != "arc" or s1.kind != "arc":
+        return None
+    if s0.center is None or s1.center is None or s0.radius is None or s1.radius is None:
+        return None
+    if math.dist(s0.center, s1.center) > tolerance:
+        return None
+    if abs(s0.radius - s1.radius) > tolerance:
+        return None
+    if math.dist(s0.end, s1.start) > tolerance or math.dist(s1.end, s0.start) > tolerance:
+        return None
+    return (s0.center, s0.radius)
