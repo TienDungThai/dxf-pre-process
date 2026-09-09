@@ -19,10 +19,38 @@ class Segment:
 
 @dataclass
 class Contour:
+    """An ordered chain of Segments.
+
+    INVARIANT (contiguity): consecutive segments must share a point, i.e.
+    ``segments[i].end == segments[i + 1].start``, and for a closed contour the
+    wraparound pair ``segments[-1].end == segments[0].start`` as well. The
+    writer relies on this (it emits only each segment's start point), so a
+    non-contiguous contour would silently lose vertices. Use
+    :meth:`assert_contiguous` to check it at boundaries that build or mutate
+    contours.
+    """
+
     segments: list[Segment]
     is_closed: bool
     source_layer: str
     source_handle: str
+
+    def assert_contiguous(self, tolerance: float = 1e-6) -> None:
+        """Raise ValueError if the contiguity invariant is violated."""
+        n = len(self.segments)
+        if n == 0:
+            return
+        pairs = range(n) if self.is_closed else range(n - 1)
+        for i in pairs:
+            a = self.segments[i]
+            b = self.segments[(i + 1) % n]
+            gap = math.dist(a.end, b.start)
+            if gap > tolerance:
+                raise ValueError(
+                    f"Contour is not contiguous: segment {i} ends at {a.end} but "
+                    f"segment {(i + 1) % n} starts at {b.start} (gap {gap:.6g} > "
+                    f"tolerance {tolerance:.6g}); handle={self.source_handle!r}"
+                )
 
     def to_shapely(self, arc_tolerance: float = 0.02) -> LinearRing | LineString:
         """Discretize for computation only. NEVER use this output to write a DXF file."""

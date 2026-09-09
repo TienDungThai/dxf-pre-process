@@ -143,3 +143,40 @@ def test_contour_as_full_circle_detects_two_arc_circle():
 
 def test_contour_as_full_circle_rejects_non_circle():
     assert contour_as_full_circle(_unit_square_ccw()) is None
+
+
+def test_assert_contiguous_passes_for_contiguous_closed_contour():
+    segs = [
+        Segment(kind="line", start=(0.0, 0.0), end=(1.0, 0.0)),
+        Segment(kind="line", start=(1.0, 0.0), end=(1.0, 1.0)),
+        Segment(kind="line", start=(1.0, 1.0), end=(0.0, 0.0)),
+    ]
+    Contour(segments=segs, is_closed=True, source_layer="0", source_handle="1").assert_contiguous()
+
+
+def test_assert_contiguous_passes_for_contiguous_open_contour():
+    segs = [
+        Segment(kind="line", start=(0.0, 0.0), end=(1.0, 0.0)),
+        Segment(kind="line", start=(1.0, 0.0), end=(2.0, 0.0)),
+    ]
+    Contour(segments=segs, is_closed=False, source_layer="0", source_handle="1").assert_contiguous()
+
+
+def test_assert_contiguous_raises_on_gap_between_segments():
+    segs = [
+        Segment(kind="line", start=(0.0, 0.0), end=(1.0, 0.0)),
+        Segment(kind="line", start=(1.5, 0.0), end=(2.0, 0.0)),
+    ]
+    contour = Contour(segments=segs, is_closed=False, source_layer="0", source_handle="7")
+    with pytest.raises(ValueError, match="not contiguous"):
+        contour.assert_contiguous()
+
+
+def test_assert_contiguous_raises_on_open_wraparound_of_closed_contour():
+    segs = [
+        Segment(kind="line", start=(0.0, 0.0), end=(1.0, 0.0)),
+        Segment(kind="line", start=(1.0, 0.0), end=(1.0, 1.0)),
+    ]
+    contour = Contour(segments=segs, is_closed=True, source_layer="0", source_handle="7")
+    with pytest.raises(ValueError, match="not contiguous"):
+        contour.assert_contiguous()

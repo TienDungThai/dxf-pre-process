@@ -22,13 +22,48 @@ def _write_circle(msp, contour: Contour, layer: str) -> None:
     msp.add_circle(center=center, radius=radius, dxfattribs={"layer": layer})
 
 
+_FULL_SWEEP_TOL = 1e-9
+
+
+def _split_full_sweep_arcs(segments: list[Segment]) -> list[Segment]:
+    """Split any full-sweep arc (start == end, i.e. a whole circle encoded as one
+    arc segment) into two half-circle arcs.
+
+    A full-sweep arc has a bulge angle of 2*pi, and `tan(theta/4)` computed from
+    the modulo-reduced angle collapses to 0 -- which would write the arc as a
+    zero-length straight line. Splitting matches how CIRCLE entities and the
+    spline circular-detection already represent a full circle (two arcs), so the
+    bulge of each half is well defined (+/-1).
+    """
+    out: list[Segment] = []
+    for seg in segments:
+        if (
+            seg.kind == "arc"
+            and seg.center is not None
+            and seg.radius is not None
+            and math.dist(seg.start, seg.end) < _FULL_SWEEP_TOL
+        ):
+            cx, cy = seg.center
+            a0 = math.atan2(seg.start[1] - cy, seg.start[0] - cx)
+            a_mid = a0 + (math.pi if seg.ccw else -math.pi)
+            p_mid = (cx + seg.radius * math.cos(a_mid), cy + seg.radius * math.sin(a_mid))
+            out.append(Segment(kind="arc", start=seg.start, end=p_mid,
+                               center=seg.center, radius=seg.radius, ccw=seg.ccw))
+            out.append(Segment(kind="arc", start=p_mid, end=seg.end,
+                               center=seg.center, radius=seg.radius, ccw=seg.ccw))
+        else:
+            out.append(seg)
+    return out
+
+
 def _write_lwpolyline(msp, contour: Contour, layer: str) -> None:
+    segments = _split_full_sweep_arcs(contour.segments)
     vertices = []
-    for seg in contour.segments:
+    for seg in segments:
         bulge = _arc_bulge(seg) if seg.kind == "arc" else 0.0
         vertices.append((seg.start[0], seg.start[1], 0, 0, bulge))
     if not contour.is_closed:
-        last = contour.segments[-1]
+        last = segments[-1]
         vertices.append((last.end[0], last.end[1], 0, 0, 0.0))
     msp.add_lwpolyline(vertices, format="xyseb", close=contour.is_closed, dxfattribs={"layer": layer})
 
@@ -42,14 +77,17 @@ def write_dxf(contours: list[Contour], path: str, config: Config) -> None:
         doc.layers.add(name=layer_name, color=7)
 
     msp = doc.modelspace()
-    for contour in contours:
+    writable = [c for c in contours if c.segments]
+    for contour in writable:
+        # Fail loudly rather than silently dropping vertices (see Contour docstring).
+        contour.assert_contiguous()
         if contour_as_full_circle(contour) is not None:
             _write_circle(msp, contour, layer_name)
         else:
             _write_lwpolyline(msp, contour, layer_name)
 
-    if contours:
-        minxs, minys, maxxs, maxys = zip(*(contour_bbox(c) for c in contours))
+    if writable:
+        minxs, minys, maxxs, maxys = zip(*(contour_bbox(c) for c in writable))
         extmin = (min(minxs), min(minys), 0.0)
         extmax = (max(maxxs), max(maxys), 0.0)
         msp.dxf.extmin = extmin
