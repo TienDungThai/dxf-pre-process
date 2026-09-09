@@ -14,6 +14,8 @@ _WARN_TYPES = {
 # future change can log/count "known silent drops" separately from truly
 # unrecognized entity types without changing behavior here.
 _SILENT_DROP_TYPES = {"DIMENSION", "LEADER", "POINT", "HATCH"}
+# POLYLINE sub-modes that represent an actual 2D/3D path (as opposed to a mesh).
+_POLYLINE_2D_3D_MODES = {"AcDb2dPolyline", "AcDb3dPolyline"}
 
 
 def _explode_insert(insert, diagnostics: list[Diagnostic]) -> list:
@@ -28,6 +30,20 @@ def _explode_insert(insert, diagnostics: list[Diagnostic]) -> list:
 
 def _classify(entity, diagnostics: list[Diagnostic]) -> list:
     dxftype = entity.dxftype()
+    if dxftype == "POLYLINE":
+        # A POLYLINE can also be a polyface/polygon mesh (3D mesh faces, not a
+        # 2D cutting path). Chaining unrelated mesh face vertices into one
+        # contour produces garbage, so drop those with a diagnostic.
+        mode = entity.get_mode() if hasattr(entity, "get_mode") else "AcDb2dPolyline"
+        if mode not in _POLYLINE_2D_3D_MODES:
+            handle = getattr(entity.dxf, "handle", None)
+            diagnostics.append(Diagnostic(
+                code="3D_ENTITY_SKIPPED",
+                message=f"POLYLINE mesh entity ({mode}) skipped",
+                handle=handle,
+            ))
+            return []
+        return [entity]
     if dxftype in _KEEP_TYPES:
         return [entity]
     if dxftype == "INSERT":

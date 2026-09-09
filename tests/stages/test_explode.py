@@ -72,3 +72,36 @@ def test_nested_insert_is_exploded_recursively(new_doc):
     assert line.dxftype() == "LINE"
     assert tuple(line.dxf.start)[:2] == (15.0, 15.0)
     assert tuple(line.dxf.end)[:2] == (16.0, 15.0)
+
+
+def test_polyface_mesh_is_dropped_with_3d_diagnostic(new_doc):
+    msp = new_doc.modelspace()
+    mesh = msp.add_polyface()
+    mesh.append_face([(0, 0, 0), (1, 0, 0), (1, 1, 1), (0, 1, 1)])
+    entities, diagnostics = explode_and_filter(msp, Config())
+    assert entities == []
+    assert [d.code for d in diagnostics] == ["3D_ENTITY_SKIPPED"]
+
+
+def test_polymesh_is_dropped_with_3d_diagnostic(new_doc):
+    msp = new_doc.modelspace()
+    msp.add_polymesh(size=(2, 2))
+    entities, diagnostics = explode_and_filter(msp, Config())
+    assert entities == []
+    assert [d.code for d in diagnostics] == ["3D_ENTITY_SKIPPED"]
+
+
+def test_2d_polyline_still_passes_through(new_doc):
+    msp = new_doc.modelspace()
+    msp.add_polyline2d([(0, 0), (1, 0), (1, 1)])
+    entities, diagnostics = explode_and_filter(msp, Config())
+    assert [e.dxftype() for e in entities] == ["POLYLINE"]
+    assert diagnostics == []
+
+
+def test_3d_polyline_still_passes_through(new_doc):
+    msp = new_doc.modelspace()
+    msp.add_polyline3d([(0, 0, 0), (1, 0, 1)])
+    entities, diagnostics = explode_and_filter(msp, Config())
+    assert [e.dxftype() for e in entities] == ["POLYLINE"]
+    assert diagnostics == []
