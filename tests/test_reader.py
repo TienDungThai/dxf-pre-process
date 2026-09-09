@@ -178,3 +178,74 @@ def test_read_dxf_explodes_blocks(new_doc, tmp_path):
     result = read_dxf(str(path), Config())
     assert len(result.contours) == 1
     assert result.contours[0].segments[0].start == (10.0, 10.0)
+
+
+def test_degenerate_lwpolyline_is_skipped_with_diagnostic(tmp_path, new_doc):
+    import ezdxf
+    from dxf_cleaner.reader import read_dxf
+    new_doc.header["$INSUNITS"] = 4
+    msp = new_doc.modelspace()
+    msp.add_lwpolyline([(3.0, 4.0)], format="xy", close=False)  # single vertex
+    msp.add_line((0, 0), (1, 0))  # a valid entity alongside it
+    path = tmp_path / "in.dxf"
+    new_doc.saveas(path)
+
+    result = read_dxf(str(path), Config())
+    assert len(result.contours) == 1  # only the LINE survives
+    assert "DEGENERATE_ENTITY_SKIPPED" in [d.code for d in result.diagnostics]
+
+
+def test_single_vertex_polyline_conversion_yields_empty_contour(new_doc):
+    msp = new_doc.modelspace()
+    pl = msp.add_lwpolyline([(1.0, 2.0)], format="xy", close=True)
+    contour, diag = convert_polyline_entity(pl)
+    assert contour.segments == []
+
+
+def test_malformed_entity_does_not_abort_the_whole_file(tmp_path, new_doc, monkeypatch):
+    from dxf_cleaner import reader as reader_mod
+    from dxf_cleaner.reader import read_dxf
+    new_doc.header["$INSUNITS"] = 4
+    msp = new_doc.modelspace()
+    msp.add_line((0, 0), (1, 0))
+    msp.add_line((2, 0), (3, 0))
+    path = tmp_path / "in.dxf"
+    new_doc.saveas(path)
+
+    calls = {"n": 0}
+    real = reader_mod.convert_simple_entity
+
+    def flaky(entity):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("boom")
+        return real(entity)
+
+    monkeypatch.setattr(reader_mod, "convert_simple_entity", flaky)
+    result = read_dxf(str(path), Config())
+    assert len(result.contours) == 1
+    failed = [d for d in result.diagnostics if d.code == "ENTITY_CONVERSION_FAILED"]
+    assert len(failed) == 1
+    assert "boom" in failed[0].message
+
+
+def test_degenerate_spline_is_skipped_with_diagnostic(tmp_path, new_doc, monkeypatch):
+    from dxf_cleaner.reader import read_dxf
+    new_doc.header["$INSUNITS"] = 4
+    msp = new_doc.modelspace()
+    msp.add_spline(fit_points=[(0, 0), (1, 1), (2, 0)], degree=2)
+    path = tmp_path / "in.dxf"
+    new_doc.saveas(path)
+
+    # Simulate a curve that flattens to a single point.
+    from dxf_cleaner.stages import flatten as flatten_mod
+    monkeypatch.setattr(
+        flatten_mod, "_flatten_to_lines", lambda points, layer, handle: None
+    )
+    monkeypatch.setattr(
+        flatten_mod, "_try_fit_circle", lambda points, tol, layer, handle: None
+    )
+
+    result = read_dxf(str(path), Config())
+    assert result.contours == []
+    assert "DEGENERATE_ENTITY_SKIPPED" in [d.code for d in result.diagnostics]

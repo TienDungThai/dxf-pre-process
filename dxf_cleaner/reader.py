@@ -119,6 +119,12 @@ def convert_polyline_entity(entity) -> tuple[Contour, Diagnostic | None]:
         raise ValueError(f"convert_polyline_entity does not handle {dxftype}")
 
     n = len(vertices)
+    if n < 2:
+        # Degenerate polyline (0 or 1 vertices): emit an empty contour so the
+        # caller (read_dxf) drops it with a diagnostic instead of building a
+        # zero-length segment.
+        empty = Contour(segments=[], is_closed=is_closed, source_layer=layer, source_handle=handle)
+        return empty, diagnostic
     count = n if is_closed else n - 1
     segments = [
         _segment_from_bulge(vertices[i][0], vertices[(i + 1) % n][0], vertices[i][1])
@@ -154,6 +160,11 @@ def _convert_entity(entity, config: Config) -> tuple[Contour | None, Diagnostic 
             chord_tolerance=config.flatten.chord_tolerance,
             detect_circular=config.flatten.detect_circular_splines,
         )
+        if contour is None:
+            # Degenerate curve (fewer than 2 distinct sample points): return an
+            # empty contour so read_dxf reports DEGENERATE_ENTITY_SKIPPED.
+            contour = Contour(segments=[], is_closed=False,
+                              source_layer=entity.dxf.layer, source_handle=entity.dxf.handle)
         return contour, None
     return None, None
 
@@ -171,10 +182,27 @@ def read_dxf(path: str, config: Config) -> ReadResult:
 
     contours: list[Contour] = []
     for entity in kept_entities:
-        contour, diag = _convert_entity(entity, config)
+        handle = getattr(entity.dxf, "handle", None)
+        try:
+            contour, diag = _convert_entity(entity, config)
+        except Exception as exc:  # one malformed entity must not abort the file
+            diagnostics.append(Diagnostic(
+                code="ENTITY_CONVERSION_FAILED",
+                message=f"{entity.dxftype()} entity could not be converted: {exc}",
+                handle=handle,
+            ))
+            continue
         if diag is not None:
             diagnostics.append(diag)
-        if contour is not None:
-            contours.append(scale_contour(contour, unit_scale))
+        if contour is None:
+            continue
+        if not contour.segments:
+            diagnostics.append(Diagnostic(
+                code="DEGENERATE_ENTITY_SKIPPED",
+                message=f"{entity.dxftype()} entity produced no geometry; skipped",
+                handle=handle,
+            ))
+            continue
+        contours.append(scale_contour(contour, unit_scale))
 
     return ReadResult(contours=contours, diagnostics=diagnostics, unit_scale=unit_scale)
