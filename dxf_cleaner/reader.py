@@ -1,5 +1,7 @@
 import math
 
+from ezdxf.math import bulge_to_arc
+
 from dxf_cleaner.config import Config
 from dxf_cleaner.model import Diagnostic, Segment, Contour, Point
 
@@ -72,3 +74,55 @@ def convert_simple_entity(entity) -> Contour:
         return Contour(segments=[seg1, seg2], is_closed=True, source_layer=layer, source_handle=handle)
 
     raise ValueError(f"convert_simple_entity does not handle {dxftype}")
+
+
+def _segment_from_bulge(p0: Point, p1: Point, bulge: float) -> Segment:
+    if bulge == 0:
+        return Segment(kind="line", start=p0, end=p1)
+    center, _start_angle, _end_angle, radius = bulge_to_arc(p0, p1, bulge)
+    return Segment(kind="arc", start=p0, end=p1, center=(center.x, center.y), radius=radius, ccw=bulge > 0)
+
+
+def convert_polyline_entity(entity) -> tuple[Contour, Diagnostic | None]:
+    """Convert a LWPOLYLINE or 2D/3D POLYLINE entity to a Contour, decoding bulges to arcs.
+
+    Args:
+        entity: An ezdxf entity with dxftype() in {"LWPOLYLINE", "POLYLINE"}
+
+    Returns:
+        A tuple of (Contour, Diagnostic | None). The diagnostic is set when a
+        3D POLYLINE was projected to Z=0.
+
+    Raises:
+        ValueError: If the entity type is not supported.
+    """
+    dxftype = entity.dxftype()
+    layer = entity.dxf.layer
+    handle = entity.dxf.handle
+    diagnostic: Diagnostic | None = None
+
+    if dxftype == "LWPOLYLINE":
+        raw_points = entity.get_points("xyb")
+        vertices = [((x, y), b) for x, y, b in raw_points]
+        is_closed = entity.closed
+    elif dxftype == "POLYLINE":
+        is_3d = any(abs(v.dxf.location.z) > 1e-9 for v in entity.vertices)
+        vertices = [((v.dxf.location.x, v.dxf.location.y), v.dxf.bulge) for v in entity.vertices]
+        is_closed = entity.is_closed
+        if is_3d:
+            diagnostic = Diagnostic(
+                code="3D_POLYLINE_PROJECTED",
+                message="3D POLYLINE projected to Z=0",
+                handle=handle,
+            )
+    else:
+        raise ValueError(f"convert_polyline_entity does not handle {dxftype}")
+
+    n = len(vertices)
+    count = n if is_closed else n - 1
+    segments = [
+        _segment_from_bulge(vertices[i][0], vertices[(i + 1) % n][0], vertices[i][1])
+        for i in range(count)
+    ]
+    contour = Contour(segments=segments, is_closed=is_closed, source_layer=layer, source_handle=handle)
+    return contour, diagnostic
