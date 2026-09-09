@@ -123,3 +123,58 @@ def test_convert_3d_polyline_projects_and_warns(new_doc):
     assert diag.code == "3D_POLYLINE_PROJECTED"
     for seg in contour.segments:
         assert len(seg.start) == 2  # projected to 2D, Z dropped
+
+
+from dxf_cleaner.reader import read_dxf, ReadResult
+
+
+def test_read_dxf_mm_file_with_line_and_circle(new_doc, tmp_path):
+    msp = new_doc.modelspace()
+    msp.add_line((0, 0), (10, 0))
+    msp.add_circle((5, 5), radius=2.0)
+    new_doc.header["$INSUNITS"] = 4
+    path = tmp_path / "test.dxf"
+    new_doc.saveas(path)
+
+    result = read_dxf(str(path), Config())
+    assert isinstance(result, ReadResult)
+    assert result.unit_scale == 1.0
+    assert len(result.contours) == 2
+    assert result.diagnostics == []
+
+
+def test_read_dxf_inch_file_scales_coordinates(new_doc, tmp_path):
+    msp = new_doc.modelspace()
+    msp.add_line((0, 0), (1, 0))
+    new_doc.header["$INSUNITS"] = 1
+    path = tmp_path / "inch.dxf"
+    new_doc.saveas(path)
+
+    result = read_dxf(str(path), Config())
+    line_contour = result.contours[0]
+    assert math.isclose(line_contour.segments[0].end[0], 25.4, abs_tol=1e-6)
+
+
+def test_read_dxf_skips_text_and_records_diagnostic(new_doc, tmp_path):
+    msp = new_doc.modelspace()
+    msp.add_line((0, 0), (1, 0))
+    msp.add_text("hello")
+    path = tmp_path / "with_text.dxf"
+    new_doc.saveas(path)
+
+    result = read_dxf(str(path), Config())
+    assert len(result.contours) == 1
+    assert any(d.code == "TEXT_SKIPPED" for d in result.diagnostics)
+
+
+def test_read_dxf_explodes_blocks(new_doc, tmp_path):
+    block = new_doc.blocks.new("B1")
+    block.add_line((0, 0), (1, 0))
+    msp = new_doc.modelspace()
+    msp.add_blockref("B1", (10, 10))
+    path = tmp_path / "with_block.dxf"
+    new_doc.saveas(path)
+
+    result = read_dxf(str(path), Config())
+    assert len(result.contours) == 1
+    assert result.contours[0].segments[0].start == (10.0, 10.0)

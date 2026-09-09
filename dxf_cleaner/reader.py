@@ -126,3 +126,55 @@ def convert_polyline_entity(entity) -> tuple[Contour, Diagnostic | None]:
     ]
     contour = Contour(segments=segments, is_closed=is_closed, source_layer=layer, source_handle=handle)
     return contour, diagnostic
+
+
+from dataclasses import dataclass
+import ezdxf
+from dxf_cleaner.model import scale_contour
+from dxf_cleaner.stages.explode import explode_and_filter
+from dxf_cleaner.stages.flatten import flatten_entity
+
+
+@dataclass
+class ReadResult:
+    contours: list[Contour]
+    diagnostics: list[Diagnostic]
+    unit_scale: float
+
+
+def _convert_entity(entity, config: Config) -> tuple[Contour | None, Diagnostic | None]:
+    dxftype = entity.dxftype()
+    if dxftype in {"LINE", "ARC", "CIRCLE"}:
+        return convert_simple_entity(entity), None
+    if dxftype in {"LWPOLYLINE", "POLYLINE"}:
+        return convert_polyline_entity(entity)
+    if dxftype in {"SPLINE", "ELLIPSE"}:
+        contour = flatten_entity(
+            entity,
+            chord_tolerance=config.flatten.chord_tolerance,
+            detect_circular=config.flatten.detect_circular_splines,
+        )
+        return contour, None
+    return None, None
+
+
+def read_dxf(path: str, config: Config) -> ReadResult:
+    doc = ezdxf.readfile(path)
+    unit_scale, unit_diag = determine_unit_scale(doc, config)
+
+    diagnostics: list[Diagnostic] = []
+    if unit_diag is not None:
+        diagnostics.append(unit_diag)
+
+    kept_entities, explode_diags = explode_and_filter(doc.modelspace(), config)
+    diagnostics.extend(explode_diags)
+
+    contours: list[Contour] = []
+    for entity in kept_entities:
+        contour, diag = _convert_entity(entity, config)
+        if diag is not None:
+            diagnostics.append(diag)
+        if contour is not None:
+            contours.append(scale_contour(contour, unit_scale))
+
+    return ReadResult(contours=contours, diagnostics=diagnostics, unit_scale=unit_scale)
