@@ -1,4 +1,5 @@
 import math
+import pytest
 from dxf_cleaner.model import contour_as_full_circle
 from dxf_cleaner.stages.flatten import flatten_entity
 
@@ -83,3 +84,53 @@ def test_three_collinear_points_do_not_crash_circle_fit(new_doc):
     spline.flattening = lambda distance, segments=4: (type("P", (), {"x": x, "y": y})() for x, y in pts)
     contour = flatten_entity(spline, chord_tolerance=0.02, detect_circular=True)
     assert all(seg.kind == "line" for seg in contour.segments)
+
+
+def _fake_flattening(spline, pts):
+    spline.flattening = lambda distance, segments=4: (
+        type("P", (), {"x": x, "y": y})() for x, y in pts
+    )
+
+
+def _sampled_arc_points(seg, n=25):
+    """Sample points along the arc a Segment claims to describe."""
+    cx, cy = seg.center
+    a0 = math.atan2(seg.start[1] - cy, seg.start[0] - cx)
+    a1 = math.atan2(seg.end[1] - cy, seg.end[0] - cx)
+    two_pi = 2 * math.pi
+    sweep = (a1 - a0) % two_pi if seg.ccw else -((a0 - a1) % two_pi)
+    return [
+        (cx + seg.radius * math.cos(a0 + sweep * i / n),
+         cy + seg.radius * math.sin(a0 + sweep * i / n))
+        for i in range(n + 1)
+    ]
+
+
+@pytest.mark.parametrize("ccw_input", [True, False])
+def test_off_origin_circular_arc_is_not_mirrored(new_doc, ccw_input):
+    """Regression: winding was computed about the origin, not the arc's center,
+    so an arc centred away from (0,0) was reconstructed as its mirror image."""
+    cx, cy, r = 100.0, 0.0, 1.0
+    # 90 deg -> 270 deg going CCW passes through the LEFT side (x < cx).
+    start_deg, end_deg = (90, 270) if ccw_input else (270, 90)
+    pts = _points_on_arc(cx, cy, r, start_deg, end_deg, n=30)
+    msp = new_doc.modelspace()
+    spline = msp.add_spline(fit_points=pts[:4], degree=3, dxfattribs={"layer": "0"})
+    _fake_flattening(spline, pts)
+
+    contour = flatten_entity(spline, chord_tolerance=0.02, detect_circular=True)
+    assert len(contour.segments) == 1
+    seg = contour.segments[0]
+    assert seg.kind == "arc"
+    assert math.isclose(seg.radius, r, abs_tol=0.02)
+
+    # The true arc lies entirely on the left half: bbox x in [99, 100].
+    xs = [p[0] for p in pts]
+    assert math.isclose(min(xs), 99.0, abs_tol=0.01)
+    assert math.isclose(max(xs), 100.0, abs_tol=1e-6)
+
+    # Every point on the arc the Segment claims must lie on the input curve
+    # (same half), not on the mirror arc across the chord.
+    sampled = _sampled_arc_points(seg)
+    assert max(p[0] for p in sampled) <= 100.0 + 1e-6, "arc was mirrored across the chord"
+    assert seg.ccw is ccw_input

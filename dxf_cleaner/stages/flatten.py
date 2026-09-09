@@ -18,13 +18,22 @@ def _fit_circle_3pt(p1: Point, p2: Point, p3: Point) -> tuple[Point, float] | No
     return (ux, uy), radius
 
 
-def _signed_area_sign(points: list[Point]) -> int:
-    area = 0.0
+def _signed_area_sign(points: list[Point], center: Point) -> int:
+    """Angular direction of `points` *about `center`*.
+
+    Signed sum of cross products of successive radius vectors (p[i]-center,
+    p[i+1]-center). This is the shoelace formula translated so the origin sits
+    at the arc's own center; using the raw coordinate origin instead reports the
+    winding about (0, 0), which is wrong for any arc not centred there and makes
+    the arc get reconstructed as its mirror image across the chord.
+    """
+    cx, cy = center
+    total = 0.0
     for i in range(len(points) - 1):
         x1, y1 = points[i]
         x2, y2 = points[i + 1]
-        area += x1 * y2 - x2 * y1
-    return 1 if area >= 0 else -1
+        total += (x1 - cx) * (y2 - cy) - (x2 - cx) * (y1 - cy)
+    return 1 if total >= 0 else -1
 
 
 def _try_fit_circle(points: list[Point], tolerance: float, layer: str, handle: str) -> Contour | None:
@@ -44,7 +53,7 @@ def _try_fit_circle(points: list[Point], tolerance: float, layer: str, handle: s
             return None
 
     is_closed = math.dist(points[0], points[-1]) <= tolerance
-    ccw = _signed_area_sign(points) > 0
+    ccw = _signed_area_sign(points, center) > 0
 
     if is_closed:
         cx, cy = center
@@ -62,10 +71,20 @@ def _try_fit_circle(points: list[Point], tolerance: float, layer: str, handle: s
     return Contour(segments=[seg], is_closed=False, source_layer=layer, source_handle=handle)
 
 
-def _flatten_to_lines(points: list[Point], layer: str, handle: str) -> Contour:
+def _flatten_to_lines(points: list[Point], layer: str, handle: str) -> Contour | None:
+    """Build a polyline Contour from sampled points.
+
+    Convention: returns None for a degenerate input (fewer than 2 points, or a
+    point list that collapses to a single distinct point) rather than producing
+    a Contour with zero segments -- callers treat None as "nothing to emit".
+    """
+    if len(points) < 2:
+        return None
     is_closed = math.dist(points[0], points[-1]) <= 1e-6
     if is_closed:
         points = points[:-1]
+        if len(points) < 2:
+            return None
     segments = [
         Segment(kind="line", start=points[i], end=points[(i + 1) % len(points)])
         for i in range(len(points) - (0 if is_closed else 1))
@@ -73,7 +92,7 @@ def _flatten_to_lines(points: list[Point], layer: str, handle: str) -> Contour:
     return Contour(segments=segments, is_closed=is_closed, source_layer=layer, source_handle=handle)
 
 
-def flatten_entity(entity, chord_tolerance: float, detect_circular: bool) -> Contour:
+def flatten_entity(entity, chord_tolerance: float, detect_circular: bool) -> Contour | None:
     layer = entity.dxf.layer
     handle = entity.dxf.handle
     raw_points = list(entity.flattening(chord_tolerance))
