@@ -41,9 +41,9 @@ def _roundtrip(doc, tmp_path, config: Config = Config()):
             [(0, 0, 0, 0, 1.0), (10, 0, 0, 0, 0.0), (10, 10, 0, 0, 0.0), (0, 10, 0, 0, 0.0)],
             format="xyseb", close=True,
         ) and None, id="polyline_with_bulge"),
-        pytest.param(lambda doc: doc.modelspace().add_arc(
-            center=(0, 0), radius=5.0, start_angle=0, end_angle=180
-        ) and doc.modelspace().add_line((-5, 0), (5, 0)) and None, id="arc_plus_closing_line"),
+        pytest.param(lambda doc: doc.modelspace().add_lwpolyline(
+            [(5, 0, 0, 0, 1.0), (-5, 0, 0, 0, 0.0)], format="xyseb", close=True,
+        ) and None, id="arc_plus_closing_line"),
     ],
 )
 def test_area_and_bbox_stable_across_roundtrip(build_doc, tmp_path):
