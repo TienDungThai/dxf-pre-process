@@ -137,3 +137,39 @@ def test_welded_ring_is_contiguous_for_circular_input():
     result, diags, welded = weld_contours([circle_a, circle_b], mode="overlapping")
     assert len(result) == 1
     result[0].assert_contiguous()
+
+
+def test_mode_all_warns_when_a_nested_hole_is_lost_in_the_union():
+    # In "all" mode every closed contour in the cluster gets unioned together,
+    # including a hole contour fully contained by its own parent's exterior --
+    # unary_union of a containing polygon and a contained one just returns the
+    # containing polygon, silently deleting the hole. HOLES_LOST_IN_WELD_ALL
+    # must fire, naming the absorbed contour's handle.
+    outer = _square(0, 0, 20, handle="OUTER")
+    hole = _square(5, 5, 10, handle="HOLE")
+    result, diags, welded = weld_contours([outer, hole], mode="all")
+    assert len(result) == 1
+    lost = [d for d in diags if d.code == "HOLES_LOST_IN_WELD_ALL"]
+    assert len(lost) == 1
+    assert lost[0].handle == "HOLE"
+
+
+def test_mode_overlapping_does_not_warn_about_nested_containment():
+    # The same nested outer/hole pair in "overlapping" mode is left untouched
+    # (containment isn't "genuine overlap"), so no data is lost and no
+    # HOLES_LOST_IN_WELD_ALL diagnostic should be emitted.
+    outer = _square(0, 0, 20, handle="OUTER")
+    hole = _square(5, 5, 10, handle="HOLE")
+    result, diags, welded = weld_contours([outer, hole], mode="overlapping")
+    assert len(result) == 2
+    assert not any(d.code == "HOLES_LOST_IN_WELD_ALL" for d in diags)
+
+
+def test_mode_all_does_not_warn_for_independent_non_nested_contours():
+    # Two disjoint squares welded in "all" mode still merge (mode "all" unions
+    # everything regardless of overlap), but neither is contained by the
+    # other, so nothing is silently lost and no warning should fire.
+    a = _square(0, 0, 10, handle="A")
+    b = _square(100, 100, 10, handle="B")
+    result, diags, welded = weld_contours([a, b], mode="all")
+    assert not any(d.code == "HOLES_LOST_IN_WELD_ALL" for d in diags)

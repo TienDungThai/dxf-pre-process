@@ -1,4 +1,5 @@
 import ezdxf
+import pytest
 from dxf_cleaner.config import Config
 from dxf_cleaner.pipeline import run_pipeline, parts_to_contours, write_pipeline_result
 from dxf_cleaner.reader import read_dxf
@@ -187,4 +188,49 @@ def test_weld_mode_off_disables_welding(tmp_path):
     config.weld.mode = "off"
     result = run_pipeline(str(path), config)
     assert len(result.parts) == 2
+
+
+def test_simplify_remap_is_positional_not_by_duplicate_handle(tmp_path, monkeypatch):
+    # Regression for the case where `snap_and_chain` gives two distinct closed
+    # contours the SAME source_handle (chains inherit their handle from their
+    # seed segment, so one entity split via AMBIGUOUS_JUNCTION can yield two
+    # chains sharing a handle). A handle-keyed dict remap collapses to one
+    # entry and can hand the wrong part the wrong geometry. Rebuilding
+    # positionally (zipped against parts_to_contours' walk order) must keep
+    # each part's own geometry regardless of the duplicate handle.
+    import dxf_cleaner.pipeline as pipeline_module
+    from dxf_cleaner.model import Segment, Contour
+
+    def _square_contour(x0, y0, size, handle):
+        x1, y1 = x0 + size, y0 + size
+        pts = [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
+        segs = [Segment(kind="line", start=pts[i], end=pts[(i + 1) % 4]) for i in range(4)]
+        return Contour(segments=segs, is_closed=True, source_layer="0", source_handle=handle)
+
+    # Two disjoint, differently-sized squares sharing the handle "DUP" --
+    # exactly the scenario a split AMBIGUOUS_JUNCTION chain could produce.
+    small = _square_contour(0, 0, 10, "DUP")
+    large = _square_contour(1000, 1000, 20, "DUP")
+
+    def fake_snap_and_chain(contours, tolerance, max_reportable_gap):
+        return [small, large], []
+
+    monkeypatch.setattr(pipeline_module, "snap_and_chain", fake_snap_and_chain)
+
+    doc = ezdxf.new("R2000")
+    doc.header["$INSUNITS"] = 4
+    doc.modelspace().add_line((0, 0), (1, 1))  # placeholder so read_dxf has something to read
+    path = tmp_path / "dup_handle.dxf"
+    doc.saveas(path)
+
+    config = Config()
+    result = run_pipeline(str(path), config)
+    assert len(result.parts) == 2
+
+    from dxf_cleaner.model import contour_signed_area
+    areas = sorted(abs(contour_signed_area(p.exterior)) for p in result.parts)
+    # 10x10 -> area 100, 20x20 -> area 400: each part must keep ITS OWN
+    # geometry, not both collapsing onto whichever contour the handle-keyed
+    # dict happened to keep last.
+    assert areas == [pytest.approx(100.0), pytest.approx(400.0)]
     assert result.report.info["weld_count"] == 0

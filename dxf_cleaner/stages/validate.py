@@ -23,6 +23,10 @@ _WARNING_CODES = {
     # Simplify skipped a contour because it would have deviated area beyond the
     # configured limit -- the operator should know it kept the denser original.
     "SIMPLIFY_REVERTED_AREA_DEVIATION",
+    # weld mode "all" unions every closed contour together, including a
+    # hole/island fully contained inside another contour -- the containment
+    # is silently absorbed by unary_union, so the operator should know.
+    "HOLES_LOST_IN_WELD_ALL",
 }
 # Codes that are normal, expected cleanup actions. They are deliberately NOT
 # escalated to warnings; they are counted into the report's info block so they

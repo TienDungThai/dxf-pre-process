@@ -144,6 +144,30 @@ def _polygon_to_contours(poly: Polygon, arc_tolerance: float, handle: str, layer
     return out
 
 
+def _warn_contained_polygons(
+    cluster: list[int], polygons: list[Polygon], valid_closed: list[Contour], diagnostics: list[Diagnostic]
+) -> None:
+    """In "all" mode every closed contour in the cluster is unioned together,
+    including a hole/island fully contained inside another contour's
+    exterior -- `unary_union` of a containing polygon and a contained one
+    just returns the containing polygon, silently deleting the contained
+    one. Warn per contained contour so the data loss is auditable."""
+    lost: set[int] = set()
+    for a in cluster:
+        for b in cluster:
+            if a == b or a in lost:
+                continue
+            if polygons[a].within(polygons[b]) and not polygons[a].equals(polygons[b]):
+                lost.add(a)
+    for i in sorted(lost):
+        diagnostics.append(Diagnostic(
+            code="HOLES_LOST_IN_WELD_ALL",
+            message="Contour fully contained by another in the same weld-all cluster; "
+                    "will be absorbed and lost in the union",
+            handle=valid_closed[i].source_handle,
+        ))
+
+
 def weld_contours(
     contours: list[Contour], mode: Literal["off", "overlapping", "all"], arc_tolerance: float = 0.02
 ) -> tuple[list[Contour], list[Diagnostic], set[str]]:
@@ -180,6 +204,8 @@ def weld_contours(
             result.append(valid_closed[cluster[0]])
             continue
         cluster_polys = [polygons[i] for i in cluster]
+        if mode == "all":
+            _warn_contained_polygons(cluster, polygons, valid_closed, diagnostics)
         union_geom = unary_union(cluster_polys)
         pieces = list(union_geom.geoms) if isinstance(union_geom, MultiPolygon) else [union_geom]
         base_handle = "_".join(sorted(valid_closed[i].source_handle for i in cluster))

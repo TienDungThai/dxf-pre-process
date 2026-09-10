@@ -69,10 +69,20 @@ def run_pipeline(input_path: str, config: Config) -> PipelineResult:
             config.simplify.collinear_angle_deg, config.simplify.max_area_deviation_pct,
         )
         diagnostics.extend(simplify_diags)
-        by_handle = {c.source_handle: c for c in simplified}
+        # `simplify_contours` returns exactly one output contour per input
+        # contour, in the same order it was given (see simplify_contours).
+        # `flat_contours` was built by walking `part.exterior` then
+        # `part.interiors` for each part, in order (see parts_to_contours),
+        # so we can consume `simplified` positionally in that same
+        # interleaving to reassign each part's contours. A handle-keyed
+        # lookup would silently collapse when two contours share a
+        # source_handle (e.g. two chains split from one AMBIGUOUS_JUNCTION
+        # entity), swapping one part's geometry for another's.
+        assert len(simplified) == len(flat_contours)
+        it = iter(simplified)
         for part in parts:
-            part.exterior = by_handle.get(part.exterior.source_handle, part.exterior)
-            part.interiors = [by_handle.get(h.source_handle, h) for h in part.interiors]
+            part.exterior = next(it)
+            part.interiors = [next(it) for _ in part.interiors]
 
     contour_count_after = len(parts_to_contours(parts))
     node_count_after = sum(len(c.segments) for c in parts_to_contours(parts))
