@@ -69,6 +69,12 @@ def dedupe_contours(contours: list[Contour], merge_common_edges: bool) -> tuple[
             origin_contour.append(ci)
 
     removed = [False] * len(segments)
+    # Every contour index whose segments were changed in ANY way by this call --
+    # a segment removed, or a segment replaced/extended by the overlap merge.
+    # Both kinds of change can break a closed contour's contiguity invariant,
+    # so every touched closed contour gets re-checked below. Snapshotted here
+    # because `segments` is mutated in place by the overlap merge.
+    original_segments = list(segments)
 
     groups: dict[tuple, list[int]] = {}
     for i, seg in enumerate(segments):
@@ -145,24 +151,35 @@ def dedupe_contours(contours: list[Contour], merge_common_edges: bool) -> tuple[
                 cluster, cur_lo, cur_hi = [i], lo, hi
         _finalize_overlap_cluster(cluster, segments, removed, diagnostics, ux, uy, perp, cur_lo, cur_hi)
 
+    touched: set[int] = {
+        origin_contour[i]
+        for i in range(len(segments))
+        if removed[i] or segments[i] is not original_segments[i]
+    }
+
     result: list[Contour] = []
     for ci, contour in enumerate(contours):
         kept = [seg for i, seg in enumerate(segments) if origin_contour[i] == ci and not removed[i]]
         if not kept:
             continue
         is_closed = contour.is_closed
-        if is_closed and len(kept) < len(contour.segments):
-            # Removing a segment (e.g. a shared edge under merge_common_edges)
-            # can break the closed contour's contiguity invariant. Never leave
-            # is_closed=True on a chain that no longer closes/joins up --
-            # downstream stages and the writer rely on that invariant.
+        if is_closed and ci in touched:
+            # ANY dedupe change can break the closed contour's contiguity
+            # invariant: removing a segment (e.g. a shared edge under
+            # merge_common_edges) leaves a gap, and the collinear-overlap merge
+            # can extend a surviving segment's endpoint past where its ring
+            # neighbour expected it to end -- without reducing this contour's
+            # segment count at all. So re-check every touched closed contour,
+            # not only those that lost segments. Never leave is_closed=True on a
+            # chain that no longer joins up -- downstream stages and the writer
+            # rely on that invariant.
             if not _is_contiguous_closed(kept):
                 is_closed = False
                 diagnostics.append(Diagnostic(
                     code="CONTOUR_OPENED_BY_DEDUPE",
                     message=(
-                        "Closed contour lost segment(s) during dedupe and is no longer "
-                        "contiguous; marked open"
+                        "Closed contour was modified during dedupe (segment removed or "
+                        "merged) and is no longer contiguous; marked open"
                     ),
                     handle=contour.source_handle,
                 ))

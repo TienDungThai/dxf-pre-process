@@ -115,3 +115,27 @@ def test_shared_edge_merge_breaking_a_square_is_reported_critical(tmp_path):
     out_path = tmp_path / "out.dxf"
     write_pipeline_result(result, str(out_path), config)
     assert out_path.exists()
+
+
+def test_partially_overlapping_collinear_border_edge_is_reported_critical(tmp_path):
+    # Two abutting rectangles whose x=100 border edges are collinear and only
+    # PARTIALLY overlapping. The default-config overlap merge extends one
+    # rectangle's edge to the union interval, breaking its ring -- that must
+    # surface as a critical report, not a silent pass or an unattributed crash.
+    doc = ezdxf.new("R2000")
+    doc.header["$INSUNITS"] = 4
+    msp = doc.modelspace()
+    msp.add_lwpolyline([(0, 0), (100, 0), (100, 80), (0, 80)], format="xy", close=True)
+    msp.add_lwpolyline([(100, 20), (200, 20), (200, 100), (100, 100)], format="xy", close=True)
+    path = tmp_path / "overlap_edge.dxf"
+    doc.saveas(path)
+
+    result = run_pipeline(str(path), Config())
+
+    assert any(d.code == "CONTOUR_OPENED_BY_DEDUPE" for d in result.diagnostics)
+    assert any(d.code == "OPEN_CONTOUR_SKIPPED_FROM_HIERARCHY" for d in result.diagnostics)
+    assert result.report.level == "critical"
+
+    out_path = tmp_path / "out.dxf"
+    write_pipeline_result(result, str(out_path), config=Config())
+    assert out_path.exists()

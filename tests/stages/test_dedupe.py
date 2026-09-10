@@ -115,3 +115,41 @@ def test_merge_common_edges_marks_the_broken_survivor_open():
     assert any(d.code == "CONTOUR_OPENED_BY_DEDUPE" for d in diagnostics)
     for c in result:
         c.assert_contiguous()
+
+
+def _rect(x0, y0, x1, y1, handle):
+    p = [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
+    return _contour(
+        [Segment(kind="line", start=p[i], end=p[(i + 1) % 4]) for i in range(4)],
+        closed=True, handle=handle,
+    )
+
+
+def test_overlap_merge_marks_the_extended_survivor_open():
+    # Two abutting rectangles whose border edges are collinear on x=100 but only
+    # PARTIALLY overlap (LEFT spans y 0..80, RIGHT spans y 20..100), under
+    # DEFAULT config. The case-(b) overlap merge replaces LEFT's edge with the
+    # union interval y 0..100 -- extending its endpoint past where LEFT's next
+    # ring segment starts (100, 80). LEFT's segment COUNT is unchanged, so a
+    # contiguity re-check gated on "lost a segment" misses it; it must not stay
+    # is_closed=True while actually being broken.
+    left = _rect(0, 0, 100, 80, "LEFT")
+    right = _rect(100, 20, 200, 100, "RIGHT")
+    result, diagnostics = dedupe_contours([left, right], merge_common_edges=False)
+
+    assert any(d.code == "OVERLAPPING_SEGMENTS_MERGED" for d in diagnostics)
+    by_handle = {c.source_handle: c for c in result}
+    assert len(by_handle["LEFT"].segments) == 4  # nothing removed from LEFT
+    assert by_handle["LEFT"].is_closed is False
+    assert any(
+        d.code == "CONTOUR_OPENED_BY_DEDUPE" and d.handle == "LEFT" for d in diagnostics
+    )
+
+
+def test_untouched_closed_contour_stays_closed():
+    # Guard against the generalized re-check opening contours it never touched.
+    lone = _rect(0, 0, 10, 10, "LONE")
+    far = _rect(100, 100, 110, 110, "FAR")
+    result, diagnostics = dedupe_contours([lone, far], merge_common_edges=False)
+    assert all(c.is_closed for c in result)
+    assert not any(d.code == "CONTOUR_OPENED_BY_DEDUPE" for d in diagnostics)
