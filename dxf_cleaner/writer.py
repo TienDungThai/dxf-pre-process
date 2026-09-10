@@ -80,7 +80,16 @@ def write_dxf(contours: list[Contour], path: str, config: Config) -> None:
     writable = [c for c in contours if c.segments]
     for contour in writable:
         # Fail loudly rather than silently dropping vertices (see Contour docstring).
-        contour.assert_contiguous()
+        # Re-raise with the offending contour attributed, so a bug upstream is
+        # traceable instead of surfacing as a bare mid-write ValueError.
+        try:
+            contour.assert_contiguous()
+        except ValueError as exc:
+            raise ValueError(
+                f"Refusing to write non-contiguous contour (layer={contour.source_layer!r}, "
+                f"handle={contour.source_handle!r}, {len(contour.segments)} segments, "
+                f"is_closed={contour.is_closed}) to {path!r}: {exc}"
+            ) from exc
         if contour_as_full_circle(contour) is not None:
             _write_circle(msp, contour, layer_name)
         else:

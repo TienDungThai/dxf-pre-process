@@ -141,3 +141,19 @@ def test_write_dxf_with_only_degenerate_flatten_output_does_not_crash(tmp_path):
     write_dxf([], str(path), Config())
     doc = ezdxf.readfile(str(path))
     assert list(doc.modelspace()) == []
+
+
+def test_non_contiguous_contour_error_names_the_offending_contour(tmp_path):
+    import pytest
+    from dxf_cleaner.model import Contour, Segment
+    broken = Contour(
+        segments=[
+            Segment(kind="line", start=(0.0, 0.0), end=(10.0, 0.0)),
+            Segment(kind="line", start=(10.0, 10.0), end=(0.0, 10.0)),
+        ],
+        is_closed=True, source_layer="CUT", source_handle="BAD1",
+    )
+    with pytest.raises(ValueError) as exc:
+        write_dxf([broken], str(tmp_path / "out.dxf"), Config())
+    message = str(exc.value)
+    assert "BAD1" in message and "non-contiguous" in message
