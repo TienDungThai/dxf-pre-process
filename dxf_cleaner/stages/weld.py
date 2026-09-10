@@ -57,7 +57,15 @@ def _cluster_by_overlap(polygons: list[Polygon]) -> list[list[int]]:
             j = int(j)
             if j <= i:
                 continue
-            if poly.intersection(polygons[j]).area > _MIN_OVERLAP_AREA:
+            other = polygons[j]
+            # `overlaps()` is positive-area interior intersection with NEITHER
+            # polygon containing the other -- exactly "genuinely overlapping"
+            # for weld purposes. Plain intersection-area would also fire for a
+            # hole/island fully nested inside another closed contour (e.g. a
+            # part's hole and the island sitting inside it), which is a
+            # legitimate containment relationship for the hierarchy stage to
+            # sort out, not something weld should merge away.
+            if poly.overlaps(other) and poly.intersection(other).area > _MIN_OVERLAP_AREA:
                 union(i, j)
 
     clusters: dict[int, list[int]] = {}

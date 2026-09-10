@@ -47,6 +47,21 @@ def test_touching_but_not_overlapping_squares_stay_independent():
     assert welded == set()
 
 
+def test_nested_contour_containment_is_not_treated_as_overlap():
+    # A hole/island fully contained within another closed contour (e.g. an
+    # outer part boundary and its interior hole, later sorted out by the
+    # hierarchy stage) has a large-area intersection but neither polygon
+    # overlaps the other in the geometric sense -- weld must leave both
+    # untouched rather than merging away the containment relationship.
+    outer = _square(0, 0, 20, handle="OUTER")
+    inner = _square(5, 5, 10, handle="INNER")
+    result, diags, welded = weld_contours([outer, inner], mode="overlapping")
+    assert len(result) == 2
+    assert {c.source_handle for c in result} == {"OUTER", "INNER"}
+    assert welded == set()
+    assert diags == []
+
+
 def test_mode_all_welds_even_non_overlapping_shapes():
     squares = [_square(0, 0, 10, handle="A"), _square(100, 100, 10, handle="B")]
     result, diags, welded = weld_contours(squares, mode="all")

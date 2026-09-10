@@ -7,7 +7,9 @@ from dxf_cleaner.writer import write_dxf
 from dxf_cleaner.stages.snap import snap_and_chain
 from dxf_cleaner.stages.dedupe import dedupe_contours
 from dxf_cleaner.stages.despeckle import despeckle_contours
+from dxf_cleaner.stages.weld import weld_contours
 from dxf_cleaner.stages.hierarchy import build_hierarchy
+from dxf_cleaner.stages.simplify import simplify_contours
 from dxf_cleaner.stages.validate import validate, ValidationReport
 
 
@@ -52,8 +54,25 @@ def run_pipeline(input_path: str, config: Config) -> PipelineResult:
     )
     diagnostics.extend(despeckle_diags)
 
+    contours, weld_diags, welded_handles = weld_contours(contours, config.weld.mode)
+    diagnostics.extend(weld_diags)
+    weld_count = sum(1 for d in weld_diags if d.code == "CONTOURS_WELDED")
+
     parts, hierarchy_diags = build_hierarchy(contours)
     diagnostics.extend(hierarchy_diags)
+
+    if config.simplify.enabled:
+        touched_handles = read_result.flattened_handles | welded_handles
+        flat_contours = parts_to_contours(parts)
+        simplified, simplify_diags = simplify_contours(
+            flat_contours, touched_handles, config.simplify.tolerance,
+            config.simplify.collinear_angle_deg, config.simplify.max_area_deviation_pct,
+        )
+        diagnostics.extend(simplify_diags)
+        by_handle = {c.source_handle: c for c in simplified}
+        for part in parts:
+            part.exterior = by_handle.get(part.exterior.source_handle, part.exterior)
+            part.interiors = [by_handle.get(h.source_handle, h) for h in part.interiors]
 
     contour_count_after = len(parts_to_contours(parts))
     node_count_after = sum(len(c.segments) for c in parts_to_contours(parts))
@@ -65,7 +84,7 @@ def run_pipeline(input_path: str, config: Config) -> PipelineResult:
         node_count_after=node_count_after,
         dedup_count=dedup_count,
         closed_count=closed_count,
-        weld_count=0,  # weld.py doesn't exist until Phase 3
+        weld_count=weld_count,
     )
     report = validate(parts, diagnostics, config.validate, stats)
 

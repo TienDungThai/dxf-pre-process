@@ -139,3 +139,52 @@ def test_partially_overlapping_collinear_border_edge_is_reported_critical(tmp_pa
     out_path = tmp_path / "out.dxf"
     write_pipeline_result(result, str(out_path), config=Config())
     assert out_path.exists()
+
+
+def test_pipeline_welds_overlapping_squares_and_reports_weld_count(tmp_path):
+    doc = ezdxf.new("R2000")
+    doc.header["$INSUNITS"] = 4
+    msp = doc.modelspace()
+    # two 10x10 squares overlapping diagonally (no shared/collinear edges, so
+    # dedupe's collinear-overlap merge leaves them untouched and weld is the
+    # only stage that can reconcile the area overlap).
+    msp.add_lwpolyline([(0, 0), (10, 0), (10, 10), (0, 10)], format="xy", close=True)
+    msp.add_lwpolyline([(5, 5), (15, 5), (15, 15), (5, 15)], format="xy", close=True)
+    path = tmp_path / "overlapping_squares.dxf"
+    doc.saveas(path)
+
+    config = Config()
+    result = run_pipeline(str(path), config)
+    assert len(result.parts) == 1
+    assert result.report.info["weld_count"] == 1
+
+
+def test_pipeline_simplify_reduces_node_count_only_on_touched_contours(tmp_path):
+    doc = ezdxf.new("R2000")
+    doc.header["$INSUNITS"] = 4
+    msp = doc.modelspace()
+    msp.add_lwpolyline([(0, 0), (20, 0), (20, 20), (0, 20)], format="xy", close=True)  # untouched, 4 nodes already
+    msp.add_ellipse((50, 50), major_axis=(5, 0), ratio=1.0)  # circle-shaped ellipse, gets flattened+simplified
+    path = tmp_path / "simplify.dxf"
+    doc.saveas(path)
+
+    config = Config()
+    result = run_pipeline(str(path), config)
+    untouched = next(p for p in result.parts if len(p.exterior.segments) == 4)
+    assert untouched is not None
+
+
+def test_weld_mode_off_disables_welding(tmp_path):
+    doc = ezdxf.new("R2000")
+    doc.header["$INSUNITS"] = 4
+    msp = doc.modelspace()
+    msp.add_lwpolyline([(0, 0), (10, 0), (10, 10), (0, 10)], format="xy", close=True)
+    msp.add_lwpolyline([(5, 5), (15, 5), (15, 15), (5, 15)], format="xy", close=True)
+    path = tmp_path / "weld_off.dxf"
+    doc.saveas(path)
+
+    config = Config()
+    config.weld.mode = "off"
+    result = run_pipeline(str(path), config)
+    assert len(result.parts) == 2
+    assert result.report.info["weld_count"] == 0

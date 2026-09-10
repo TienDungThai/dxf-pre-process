@@ -249,3 +249,18 @@ def test_degenerate_spline_is_skipped_with_diagnostic(tmp_path, new_doc, monkeyp
     result = read_dxf(str(path), Config())
     assert result.contours == []
     assert "DEGENERATE_ENTITY_SKIPPED" in [d.code for d in result.diagnostics]
+
+
+def test_flattened_handles_tracks_spline_and_ellipse_entities(new_doc, tmp_path):
+    new_doc.header["$INSUNITS"] = 4
+    msp = new_doc.modelspace()
+    msp.add_line((0, 0), (1, 0))  # LINE: not flattened
+    ellipse = msp.add_ellipse((0, 0), major_axis=(5, 0), ratio=0.5)  # ELLIPSE: flattened
+    path = tmp_path / "flatten.dxf"
+    new_doc.saveas(path)
+
+    result = read_dxf(str(path), Config())
+    ellipse_handle = ellipse.dxf.handle
+    assert ellipse_handle in result.flattened_handles
+    line_handles = {c.source_handle for c in result.contours} - result.flattened_handles
+    assert len(line_handles) == 1

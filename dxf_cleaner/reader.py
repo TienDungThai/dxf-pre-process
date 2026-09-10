@@ -146,6 +146,7 @@ class ReadResult:
     contours: list[Contour]
     diagnostics: list[Diagnostic]
     unit_scale: float
+    flattened_handles: set[str]
 
 
 def _convert_entity(entity, config: Config) -> tuple[Contour | None, Diagnostic | None]:
@@ -181,6 +182,7 @@ def read_dxf(path: str, config: Config) -> ReadResult:
     diagnostics.extend(explode_diags)
 
     contours: list[Contour] = []
+    flattened_handles: set[str] = set()
     for entity in kept_entities:
         handle = getattr(entity.dxf, "handle", None)
         try:
@@ -203,6 +205,9 @@ def read_dxf(path: str, config: Config) -> ReadResult:
                 handle=handle,
             ))
             continue
+        if entity.dxftype() in {"SPLINE", "ELLIPSE"}:
+            flattened_handles.add(contour.source_handle)
         contours.append(scale_contour(contour, unit_scale))
 
-    return ReadResult(contours=contours, diagnostics=diagnostics, unit_scale=unit_scale)
+    return ReadResult(contours=contours, diagnostics=diagnostics, unit_scale=unit_scale,
+                       flattened_handles=flattened_handles)
