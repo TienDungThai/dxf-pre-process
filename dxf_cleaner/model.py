@@ -187,3 +187,32 @@ def contour_as_full_circle(contour: Contour, tolerance: float = 1e-6) -> tuple[P
     if math.dist(s0.end, s1.start) > tolerance or math.dist(s1.end, s0.start) > tolerance:
         return None
     return (s0.center, s0.radius)
+
+
+def fit_circle_3pt(p1: Point, p2: Point, p3: Point) -> tuple[Point, float] | None:
+    """Circumcircle through 3 points. Returns None if (near-)collinear."""
+    ax, ay = p1
+    bx, by = p2
+    cx, cy = p3
+    d = 2 * (ax * (by - cy) + bx * (cy - ay) + cx * (ay - by))
+    if abs(d) < 1e-9:
+        return None
+    ux = ((ax ** 2 + ay ** 2) * (by - cy) + (bx ** 2 + by ** 2) * (cy - ay) + (cx ** 2 + cy ** 2) * (ay - by)) / d
+    uy = ((ax ** 2 + ay ** 2) * (cx - bx) + (bx ** 2 + by ** 2) * (ax - cx) + (cx ** 2 + cy ** 2) * (bx - ax)) / d
+    radius = math.dist((ux, uy), p1)
+    if radius < 1e-9:
+        return None
+    return (ux, uy), radius
+
+
+def signed_area_sign(points: list[Point], center: Point) -> int:
+    """Angular direction of `points` *about `center`* (see fit_circle_3pt usage in
+    flatten.py / weld.py: reconstructing an arc needs winding about its own center,
+    not the coordinate origin, or it comes back as its mirror image across the chord)."""
+    cx, cy = center
+    total = 0.0
+    for i in range(len(points) - 1):
+        x1, y1 = points[i]
+        x2, y2 = points[i + 1]
+        total += (x1 - cx) * (y2 - cy) - (x2 - cx) * (y1 - cy)
+    return 1 if total >= 0 else -1

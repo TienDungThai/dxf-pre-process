@@ -1,39 +1,5 @@
 import math
-from dxf_cleaner.model import Segment, Contour, Point
-
-
-def _fit_circle_3pt(p1: Point, p2: Point, p3: Point) -> tuple[Point, float] | None:
-    """Circumcircle through 3 points. Returns None if (near-)collinear."""
-    ax, ay = p1
-    bx, by = p2
-    cx, cy = p3
-    d = 2 * (ax * (by - cy) + bx * (cy - ay) + cx * (ay - by))
-    if abs(d) < 1e-9:
-        return None
-    ux = ((ax ** 2 + ay ** 2) * (by - cy) + (bx ** 2 + by ** 2) * (cy - ay) + (cx ** 2 + cy ** 2) * (ay - by)) / d
-    uy = ((ax ** 2 + ay ** 2) * (cx - bx) + (bx ** 2 + by ** 2) * (ax - cx) + (cx ** 2 + cy ** 2) * (bx - ax)) / d
-    radius = math.dist((ux, uy), p1)
-    if radius < 1e-9:
-        return None
-    return (ux, uy), radius
-
-
-def _signed_area_sign(points: list[Point], center: Point) -> int:
-    """Angular direction of `points` *about `center`*.
-
-    Signed sum of cross products of successive radius vectors (p[i]-center,
-    p[i+1]-center). This is the shoelace formula translated so the origin sits
-    at the arc's own center; using the raw coordinate origin instead reports the
-    winding about (0, 0), which is wrong for any arc not centred there and makes
-    the arc get reconstructed as its mirror image across the chord.
-    """
-    cx, cy = center
-    total = 0.0
-    for i in range(len(points) - 1):
-        x1, y1 = points[i]
-        x2, y2 = points[i + 1]
-        total += (x1 - cx) * (y2 - cy) - (x2 - cx) * (y1 - cy)
-    return 1 if total >= 0 else -1
+from dxf_cleaner.model import Segment, Contour, Point, fit_circle_3pt, signed_area_sign
 
 
 def _try_fit_circle(points: list[Point], tolerance: float, layer: str, handle: str) -> Contour | None:
@@ -44,7 +10,7 @@ def _try_fit_circle(points: list[Point], tolerance: float, layer: str, handle: s
         # closed loop where the last sample coincides exactly with the first:
         # fall back to the second-to-last point so the 3-point fit isn't degenerate.
         p3 = points[-2]
-    fit = _fit_circle_3pt(p1, p2, p3)
+    fit = fit_circle_3pt(p1, p2, p3)
     if fit is None:
         return None
     center, radius = fit
@@ -53,7 +19,7 @@ def _try_fit_circle(points: list[Point], tolerance: float, layer: str, handle: s
             return None
 
     is_closed = math.dist(points[0], points[-1]) <= tolerance
-    ccw = _signed_area_sign(points, center) > 0
+    ccw = signed_area_sign(points, center) > 0
 
     if is_closed:
         cx, cy = center

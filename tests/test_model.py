@@ -207,3 +207,27 @@ def test_reverse_segment_arc_flips_ccw_keeps_center_radius():
 def test_reverse_segment_is_its_own_inverse():
     seg = Segment(kind="arc", start=(1.0, 0.0), end=(0.0, 1.0), center=(0.0, 0.0), radius=1.0, ccw=True)
     assert reverse_segment(reverse_segment(seg)) == seg
+
+
+# Task 1: fit_circle_3pt and signed_area_sign
+from dxf_cleaner.model import fit_circle_3pt, signed_area_sign
+
+
+def test_fit_circle_3pt_returns_center_and_radius():
+    center, radius = fit_circle_3pt((10, 0), (0, 10), (-10, 0))
+    assert math.dist(center, (0, 0)) < 1e-9
+    assert abs(radius - 10) < 1e-9
+
+
+def test_fit_circle_3pt_returns_none_for_collinear_points():
+    assert fit_circle_3pt((0, 0), (1, 0), (2, 0)) is None
+
+
+def test_signed_area_sign_ccw_positive():
+    points = [(10, 0), (0, 10), (-10, 0), (0, -10), (10, 0)]
+    assert signed_area_sign(points, (0, 0)) == 1
+
+
+def test_signed_area_sign_cw_negative():
+    points = [(10, 0), (0, -10), (-10, 0), (0, 10), (10, 0)]
+    assert signed_area_sign(points, (0, 0)) == -1

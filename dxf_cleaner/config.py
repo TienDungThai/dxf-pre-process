@@ -27,6 +27,17 @@ class DespeckleConfig(BaseModel):
     min_area: float = 0.1
 
 
+class WeldConfig(BaseModel):
+    mode: Literal["off", "overlapping", "all"] = "overlapping"
+
+
+class SimplifyConfig(BaseModel):
+    enabled: bool = True
+    tolerance: float = 0.01
+    collinear_angle_deg: float = 0.1
+    max_area_deviation_pct: float = 0.1
+
+
 class ValidateConfig(BaseModel):
     sheet_width: float = 1500
     sheet_height: float = 3000
@@ -47,6 +58,8 @@ class Config(BaseModel):
     snap: SnapConfig = SnapConfig()
     dedupe: DedupeConfig = DedupeConfig()
     despeckle: DespeckleConfig = DespeckleConfig()
+    weld: WeldConfig = WeldConfig()
+    simplify: SimplifyConfig = SimplifyConfig()
     validate: ValidateConfig = ValidateConfig()
     output: OutputConfig = OutputConfig()
 

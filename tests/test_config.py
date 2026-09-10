@@ -1,4 +1,5 @@
 import pytest
+from pydantic import ValidationError
 from dxf_cleaner.config import Config, load_config, SnapConfig, DedupeConfig, DespeckleConfig, ValidateConfig
 
 
@@ -60,3 +61,22 @@ def test_phase2_config_yaml_override(tmp_path):
     assert cfg.dedupe.merge_common_edges is True
     # untouched sections keep defaults
     assert cfg.despeckle.min_area == 0.1
+
+
+# Task 1: WeldConfig and SimplifyConfig
+def test_weld_config_defaults():
+    cfg = Config()
+    assert cfg.weld.mode == "overlapping"
+
+
+def test_simplify_config_defaults():
+    cfg = Config()
+    assert cfg.simplify.enabled is True
+    assert cfg.simplify.tolerance == 0.01
+    assert cfg.simplify.collinear_angle_deg == 0.1
+    assert cfg.simplify.max_area_deviation_pct == 0.1
+
+
+def test_weld_mode_rejects_invalid_value():
+    with pytest.raises(ValidationError):
+        Config(weld={"mode": "bogus"})
