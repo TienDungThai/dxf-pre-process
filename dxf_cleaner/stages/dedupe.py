@@ -6,6 +6,28 @@ def _round_point(p: Point, ndigits: int = 6) -> Point:
     return (round(p[0], ndigits), round(p[1], ndigits))
 
 
+def _arc_midpoint(seg: Segment) -> Point:
+    """A point on the arc's own sweep (not just its endpoints), so that two
+    arcs sharing the same endpoints/center/radius but tracing complementary
+    portions of the same circle (e.g. two half-circle arcs) are not mistaken
+    for duplicates of each other."""
+    cx, cy = seg.center
+    r = seg.radius
+    a0 = math.atan2(seg.start[1] - cy, seg.start[0] - cx)
+    a1 = math.atan2(seg.end[1] - cy, seg.end[0] - cx)
+    two_pi = 2 * math.pi
+    if seg.ccw:
+        sweep = (a1 - a0) % two_pi
+        if sweep == 0:
+            sweep = two_pi
+    else:
+        sweep = -((a0 - a1) % two_pi)
+        if sweep == 0:
+            sweep = -two_pi
+    a_mid = a0 + sweep / 2
+    return (cx + r * math.cos(a_mid), cy + r * math.sin(a_mid))
+
+
 def _segment_key(seg: Segment, ndigits: int = 6) -> tuple:
     endpoints = frozenset((_round_point(seg.start, ndigits), _round_point(seg.end, ndigits)))
     if seg.kind == "line":
@@ -13,6 +35,7 @@ def _segment_key(seg: Segment, ndigits: int = 6) -> tuple:
     return (
         "arc", endpoints,
         round(seg.center[0], ndigits), round(seg.center[1], ndigits), round(seg.radius, ndigits),
+        _round_point(_arc_midpoint(seg), ndigits),
     )
 
 
@@ -47,7 +70,19 @@ def dedupe_contours(contours: list[Contour], merge_common_edges: bool) -> tuple[
         if len(idxs) < 2:
             continue
         in_dup_group.update(idxs)
-        all_standalone = all(len(contours[origin_contour[i]].segments) == 1 for i in idxs)
+        # "Standalone" (case a) means every origin contour touched by this
+        # duplicate-key group consists ENTIRELY of segments belonging to the
+        # group — i.e. the whole contour is duplicate lines with nothing else
+        # going on (the single-segment case is just the size-1 instance of
+        # this). If a contour has segments outside the group too, the shared
+        # edge is only part of a larger real contour, so it's case (c).
+        contour_dup_counts: dict[int, int] = {}
+        for i in idxs:
+            ci = origin_contour[i]
+            contour_dup_counts[ci] = contour_dup_counts.get(ci, 0) + 1
+        all_standalone = all(
+            count == len(contours[ci].segments) for ci, count in contour_dup_counts.items()
+        )
         s0 = segments[idxs[0]]
         if all_standalone:
             for d in idxs[1:]:
