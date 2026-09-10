@@ -109,6 +109,20 @@ def validate(
         for name_b, geom_b, part_index_b in all_geoms[i + 1:]:
             if part_index_a == part_index_b:
                 continue
+            # distance() is 0 both for a legitimate shared edge (zero-area
+            # intersection) and for two shapes that genuinely overlap, so the
+            # near-zero spacing exemption alone would silence real overlaps.
+            # `overlaps()` is exactly the predicate wanted here: positive-area
+            # interior intersection with NEITHER shape containing the other --
+            # so touching edges (zero area) and legitimate nesting (an island
+            # part inside another part's hole) are both excluded.
+            if geom_a.overlaps(geom_b):
+                warnings.append(
+                    f"{name_a!r} and {name_b!r} geometrically overlap "
+                    f"(intersection area {geom_a.intersection(geom_b).area:.3f}mm2) -- "
+                    f"this is likely a design error"
+                )
+                continue
             distance = geom_a.distance(geom_b)
             if distance <= _ZERO_DISTANCE_TOL:
                 continue

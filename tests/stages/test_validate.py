@@ -157,3 +157,22 @@ def test_every_emitted_diagnostic_code_is_classified_by_validate():
         | {"ASSUMED_UNIT", "AMBIGUOUS_JUNCTION"}
     )
     assert emitted <= handled, f"unclassified diagnostic codes: {sorted(emitted - handled)}"
+
+
+def test_edge_sharing_parts_do_not_trigger_an_overlap_warning():
+    # Zero-area intersection (a legitimate shared / common-cut edge) is not an
+    # overlap, so the near-zero-distance exemption must still hold silently.
+    a = Part(exterior=_square_contour(0, 0, 100, "A"))
+    b = Part(exterior=_square_contour(100, 0, 100, "B"))  # shares the x=100 edge
+    report = validate([a, b], [], ValidateConfig(), BASE_STATS)
+    assert not any("overlap" in w for w in report.warnings)
+
+
+def test_genuinely_overlapping_parts_produce_an_overlap_warning():
+    a = Part(exterior=_square_contour(0, 0, 100, "A"))
+    b = Part(exterior=_square_contour(50, 0, 100, "B"))  # 50x100mm of real overlap
+    report = validate([a, b], [], ValidateConfig(), BASE_STATS)
+    overlap_warnings = [w for w in report.warnings if "overlap" in w]
+    assert len(overlap_warnings) == 1
+    assert "'A'" in overlap_warnings[0] and "'B'" in overlap_warnings[0]
+    assert not any("kerf" in w for w in report.warnings)
