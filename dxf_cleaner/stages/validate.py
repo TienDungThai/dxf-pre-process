@@ -7,7 +7,30 @@ from dxf_cleaner.model import Part, Diagnostic, contour_bbox
 from dxf_cleaner.config import ValidateConfig
 
 _DROPPED_ENTITY_CODES = {"TEXT_SKIPPED", "3D_ENTITY_SKIPPED", "DEGENERATE_ENTITY_SKIPPED", "ENTITY_CONVERSION_FAILED"}
-_CRITICAL_CODES = {"OPEN_CONTOUR_SKIPPED_FROM_HIERARCHY", "POLYGON_UNRECOVERABLE", "OPEN_GAP"}
+_CRITICAL_CODES = {
+    "OPEN_CONTOUR_SKIPPED_FROM_HIERARCHY",
+    "POLYGON_UNRECOVERABLE",
+    "OPEN_GAP",
+    # Same underlying problem as OPEN_CONTOUR_SKIPPED_FROM_HIERARCHY: a shape
+    # that should have been closed no longer is.
+    "CONTOUR_OPENED_BY_DEDUPE",
+}
+_WARNING_CODES = {
+    # A self-intersecting shape was silently repaired -- the operator should know.
+    "INVALID_POLYGON_FIXED",
+    "3D_POLYLINE_PROJECTED",
+    "UNSUPPORTED_INSUNITS",
+}
+# Codes that are normal, expected cleanup actions. They are deliberately NOT
+# escalated to warnings; they are counted into the report's info block so they
+# stay visible (e.g. DESPECKLED makes a removed tiny hole auditable even though
+# it is gone before validate()'s hole-size check runs).
+_INFO_CODES = {
+    "DESPECKLED",
+    "DUPLICATE_SEGMENT_REMOVED",
+    "OVERLAPPING_SEGMENTS_MERGED",
+    "COMMON_EDGE",
+}
 
 
 @dataclass
@@ -38,6 +61,8 @@ def validate(
             warnings.append("Input file did not specify units; assumed unit was used")
         elif code == "AMBIGUOUS_JUNCTION":
             warnings.append("Ambiguous junction encountered while reconnecting contours")
+        elif code in _WARNING_CODES:
+            warnings.append(f"{code}: see diagnostics for details")
 
     if not parts:
         critical.append("Output is empty: no parts survived processing")
@@ -64,24 +89,30 @@ def validate(
                     f"the material-thickness-derived minimum {min_diameter:.3f}mm"
                 )
 
-    for part_a in parts:
-        for part_b in parts:
-            if part_a is part_b or id(part_a) >= id(part_b):
-                continue
-            poly_a = Polygon(part_a.exterior.to_shapely())
-            poly_b = Polygon(part_b.exterior.to_shapely())
+    part_polygons = [Polygon(part.exterior.to_shapely()) for part in parts]
+    for i, part_a in enumerate(parts):
+        poly_a = part_polygons[i]
+        for j in range(i + 1, len(parts)):
+            part_b, poly_b = parts[j], part_polygons[j]
             if abs(poly_a.area - poly_b.area) < 1e-6 and poly_a.equals(poly_b):
                 warnings.append(
                     f"Parts {part_a.exterior.source_handle!r} and {part_b.exterior.source_handle!r} "
                     f"are fully duplicate (same shape, same position)"
                 )
 
+    # A distance of ~0 between two DIFFERENT parts' boundaries is an
+    # intentional shared (common-cut) edge, not a clearance problem -- so only
+    # positive-but-too-small distances are flagged.
     min_gap = 2 * config.kerf_width
+    _ZERO_DISTANCE_TOL = 1e-9
     for i, (name_a, geom_a, part_index_a) in enumerate(all_geoms):
         for name_b, geom_b, part_index_b in all_geoms[i + 1:]:
             if part_index_a == part_index_b:
                 continue
-            if geom_a.distance(geom_b) < min_gap and not geom_a.equals(geom_b):
+            distance = geom_a.distance(geom_b)
+            if distance <= _ZERO_DISTANCE_TOL:
+                continue
+            if distance < min_gap and not geom_a.equals(geom_b):
                 warnings.append(
                     f"{name_a!r} and {name_b!r} are closer than 2x kerf width ({min_gap}mm)"
                 )
@@ -95,4 +126,8 @@ def validate(
 
     info = dict(stats)
     info["part_count"] = len(parts)
+    for code in sorted(_INFO_CODES):
+        count = sum(1 for c in diag_codes if c == code)
+        if count:
+            info[f"diag_{code.lower()}"] = count
     return ValidationReport(level=level, critical=critical, warnings=warnings, info=info)

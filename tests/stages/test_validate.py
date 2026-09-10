@@ -90,3 +90,70 @@ def test_parts_closer_than_2x_kerf_is_a_warning():
     report = validate([a, b], [], ValidateConfig(), BASE_STATS)
     assert report.level == "warning"
     assert any("close" in w.lower() or "kerf" in w.lower() for w in report.warnings)
+
+
+def test_invalid_polygon_fixed_is_a_warning():
+    part = Part(exterior=_square_contour(0, 0, 100, "A"))
+    diags = [Diagnostic(code="INVALID_POLYGON_FIXED", message="repaired")]
+    report = validate([part], diags, ValidateConfig(), BASE_STATS)
+    assert report.level == "warning"
+
+
+def test_contour_opened_by_dedupe_is_critical():
+    part = Part(exterior=_square_contour(0, 0, 100, "A"))
+    diags = [Diagnostic(code="CONTOUR_OPENED_BY_DEDUPE", message="opened")]
+    report = validate([part], diags, ValidateConfig(), BASE_STATS)
+    assert report.level == "critical"
+
+
+def test_expected_cleanup_codes_stay_informational_but_visible():
+    part = Part(exterior=_square_contour(0, 0, 100, "A"))
+    diags = [
+        Diagnostic(code="DESPECKLED", message="tiny contour removed"),
+        Diagnostic(code="DUPLICATE_SEGMENT_REMOVED", message="dup"),
+        Diagnostic(code="OVERLAPPING_SEGMENTS_MERGED", message="merged"),
+        Diagnostic(code="COMMON_EDGE", message="shared"),
+    ]
+    report = validate([part], diags, ValidateConfig(), BASE_STATS)
+    assert report.level == "ok"
+    assert report.info["diag_despeckled"] == 1
+    assert report.info["diag_duplicate_segment_removed"] == 1
+    assert report.info["diag_overlapping_segments_merged"] == 1
+    assert report.info["diag_common_edge"] == 1
+
+
+def test_edge_sharing_parts_do_not_trigger_a_spacing_warning():
+    a = Part(exterior=_square_contour(0, 0, 100, "A"))
+    b = Part(exterior=_square_contour(100, 0, 100, "B"))  # shares the x=100 edge
+    report = validate([a, b], [Diagnostic(code="COMMON_EDGE", message="shared")], ValidateConfig(), BASE_STATS)
+    assert not any("kerf" in w for w in report.warnings)
+
+
+def test_parts_slightly_apart_still_trigger_a_spacing_warning():
+    a = Part(exterior=_square_contour(0, 0, 100, "A"))
+    b = Part(exterior=_square_contour(100.1, 0, 100, "B"))  # 0.1mm gap
+    report = validate([a, b], [], ValidateConfig(), BASE_STATS)
+    assert any("kerf" in w for w in report.warnings)
+
+
+def test_every_emitted_diagnostic_code_is_classified_by_validate():
+    """A new stage diagnostic code must be explicitly classified here, not
+    silently vanish from the report."""
+    import pathlib, re
+    from dxf_cleaner.stages import validate as validate_module
+
+    root = pathlib.Path(validate_module.__file__).parent.parent
+    sources = list((root / "stages").glob("*.py")) + [root / "reader.py"]
+    emitted = set()
+    for src in sources:
+        emitted.update(re.findall(r'code="([A-Z_0-9]+)"', src.read_text()))
+    assert emitted, "no diagnostic codes found -- the scan is broken"
+
+    handled = (
+        validate_module._CRITICAL_CODES
+        | validate_module._WARNING_CODES
+        | validate_module._INFO_CODES
+        | validate_module._DROPPED_ENTITY_CODES
+        | {"ASSUMED_UNIT", "AMBIGUOUS_JUNCTION"}
+    )
+    assert emitted <= handled, f"unclassified diagnostic codes: {sorted(emitted - handled)}"

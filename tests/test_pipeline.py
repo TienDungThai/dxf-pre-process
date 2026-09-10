@@ -89,3 +89,29 @@ def test_write_pipeline_result_produces_a_readable_dxf(tmp_path):
 
     reread = read_dxf(str(out_path), Config())
     assert len(reread.contours) == 1
+
+
+def test_shared_edge_merge_breaking_a_square_is_reported_critical(tmp_path):
+    # Two 100x100 squares sharing the x=100 edge, with merge_common_edges on.
+    # The shared edge is removed from one square, opening it -- that must
+    # surface as a critical report, not a silent "warning" plus a writer crash.
+    doc = ezdxf.new("R2000")
+    doc.header["$INSUNITS"] = 4
+    msp = doc.modelspace()
+    msp.add_lwpolyline([(0, 0), (100, 0), (100, 100), (0, 100)], format="xy", close=True)
+    msp.add_lwpolyline([(100, 0), (200, 0), (200, 100), (100, 100)], format="xy", close=True)
+    path = tmp_path / "common_edge.dxf"
+    doc.saveas(path)
+
+    config = Config()
+    config.dedupe.merge_common_edges = True
+    result = run_pipeline(str(path), config)
+
+    assert any(d.code == "CONTOUR_OPENED_BY_DEDUPE" for d in result.diagnostics)
+    assert any(d.code == "OPEN_CONTOUR_SKIPPED_FROM_HIERARCHY" for d in result.diagnostics)
+    assert result.report.level == "critical"
+
+    # the opened contour never reaches the writer, so writing still works
+    out_path = tmp_path / "out.dxf"
+    write_pipeline_result(result, str(out_path), config)
+    assert out_path.exists()
