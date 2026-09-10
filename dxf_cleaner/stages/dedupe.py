@@ -49,6 +49,15 @@ def _line_group_key(seg: Segment, ndigits: int = 4) -> tuple[float, float, float
     return (round(ux, ndigits), round(uy, ndigits), round(perp, ndigits))
 
 
+def _is_contiguous_closed(segments: list[Segment], tolerance: float = 1e-6) -> bool:
+    """Same check as Contour.assert_contiguous for a closed ring, as a predicate."""
+    n = len(segments)
+    for i in range(n):
+        if math.dist(segments[i].end, segments[(i + 1) % n].start) > tolerance:
+            return False
+    return True
+
+
 def dedupe_contours(contours: list[Contour], merge_common_edges: bool) -> tuple[list[Contour], list[Diagnostic]]:
     diagnostics: list[Diagnostic] = []
 
@@ -113,7 +122,10 @@ def dedupe_contours(contours: list[Contour], merge_common_edges: bool) -> tuple[
     for key, idxs in line_groups.items():
         if len(idxs) < 2:
             continue
-        ux, uy = key[0], key[1]
+        # The key's values are rounded (that rounding is only for grouping);
+        # recompute the exact axis from a representative member so the merged
+        # segment lands precisely on the original line.
+        ux, uy, perp = _line_group_key(segments[idxs[0]], ndigits=15)
         intervals = []
         for i in idxs:
             seg = segments[i]
@@ -129,29 +141,50 @@ def dedupe_contours(contours: list[Contour], merge_common_edges: bool) -> tuple[
                 cur_hi = max(cur_hi, hi)
                 cluster.append(i)
             else:
-                _finalize_overlap_cluster(cluster, segments, removed, diagnostics, ux, uy, cur_lo, cur_hi)
+                _finalize_overlap_cluster(cluster, segments, removed, diagnostics, ux, uy, perp, cur_lo, cur_hi)
                 cluster, cur_lo, cur_hi = [i], lo, hi
-        _finalize_overlap_cluster(cluster, segments, removed, diagnostics, ux, uy, cur_lo, cur_hi)
+        _finalize_overlap_cluster(cluster, segments, removed, diagnostics, ux, uy, perp, cur_lo, cur_hi)
 
     result: list[Contour] = []
     for ci, contour in enumerate(contours):
         kept = [seg for i, seg in enumerate(segments) if origin_contour[i] == ci and not removed[i]]
-        if kept:
-            result.append(Contour(
-                segments=kept, is_closed=contour.is_closed,
-                source_layer=contour.source_layer, source_handle=contour.source_handle,
-            ))
+        if not kept:
+            continue
+        is_closed = contour.is_closed
+        if is_closed and len(kept) < len(contour.segments):
+            # Removing a segment (e.g. a shared edge under merge_common_edges)
+            # can break the closed contour's contiguity invariant. Never leave
+            # is_closed=True on a chain that no longer closes/joins up --
+            # downstream stages and the writer rely on that invariant.
+            if not _is_contiguous_closed(kept):
+                is_closed = False
+                diagnostics.append(Diagnostic(
+                    code="CONTOUR_OPENED_BY_DEDUPE",
+                    message=(
+                        "Closed contour lost segment(s) during dedupe and is no longer "
+                        "contiguous; marked open"
+                    ),
+                    handle=contour.source_handle,
+                ))
+        result.append(Contour(
+            segments=kept, is_closed=is_closed,
+            source_layer=contour.source_layer, source_handle=contour.source_handle,
+        ))
     return result, diagnostics
 
 
 def _finalize_overlap_cluster(
     member_idxs: list[int], segments: list[Segment], removed: list[bool],
-    diagnostics: list[Diagnostic], ux: float, uy: float, lo: float, hi: float,
+    diagnostics: list[Diagnostic], ux: float, uy: float, perp: float, lo: float, hi: float,
 ) -> None:
     if len(member_idxs) < 2:
         return
     keep_idx = member_idxs[0]
-    start, end = (lo * ux, lo * uy), (hi * ux, hi * uy)
+    # Reconstruct on the ACTUAL line: direction (ux, uy) offset from the origin
+    # by `perp` along the perpendicular unit vector (-uy, ux) that
+    # _line_group_key used to compute perp.
+    start = (lo * ux - perp * uy, lo * uy + perp * ux)
+    end = (hi * ux - perp * uy, hi * uy + perp * ux)
     segments[keep_idx] = Segment(kind="line", start=start, end=end)
     for i in member_idxs[1:]:
         removed[i] = True

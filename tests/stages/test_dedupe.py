@@ -1,3 +1,4 @@
+import pytest
 from dxf_cleaner.model import Segment, Contour
 from dxf_cleaner.stages.dedupe import dedupe_contours
 
@@ -67,3 +68,50 @@ def test_non_overlapping_collinear_lines_are_left_alone():
     result, diagnostics = dedupe_contours([c1, c2], merge_common_edges=False)
     assert len(result) == 2
     assert not any(d.code == "OVERLAPPING_SEGMENTS_MERGED" for d in diagnostics)
+
+
+def test_overlapping_collinear_lines_off_origin_keep_their_offset():
+    # Regression: the merged segment used to be reconstructed on the parallel
+    # line through the ORIGIN, silently moving y=5 geometry to y=0.
+    c1 = _contour([Segment(kind="line", start=(0.0, 5.0), end=(6.0, 5.0))], handle="A")
+    c2 = _contour([Segment(kind="line", start=(4.0, 5.0), end=(10.0, 5.0))], handle="B")
+    result, diagnostics = dedupe_contours([c1, c2], merge_common_edges=False)
+    assert len(result) == 1
+    seg = result[0].segments[0]
+    assert {seg.start, seg.end} == {(0.0, 5.0), (10.0, 5.0)}
+    assert any(d.code == "OVERLAPPING_SEGMENTS_MERGED" for d in diagnostics)
+
+
+def test_overlapping_collinear_diagonal_lines_off_origin():
+    # y = x + 4: (0,4)-(6,10) and (4,8)-(10,14) -> (0,4)-(10,14)
+    c1 = _contour([Segment(kind="line", start=(0.0, 4.0), end=(6.0, 10.0))], handle="A")
+    c2 = _contour([Segment(kind="line", start=(4.0, 8.0), end=(10.0, 14.0))], handle="B")
+    result, _ = dedupe_contours([c1, c2], merge_common_edges=False)
+    seg = result[0].segments[0]
+    for p in (seg.start, seg.end):
+        assert abs(p[1] - (p[0] + 4.0)) < 1e-6
+    assert min(seg.start[0], seg.end[0]) == pytest.approx(0.0)
+    assert max(seg.start[0], seg.end[0]) == pytest.approx(10.0)
+
+
+def _square(x0, y0, side, handle):
+    p = [(x0, y0), (x0 + side, y0), (x0 + side, y0 + side), (x0, y0 + side)]
+    return _contour(
+        [Segment(kind="line", start=p[i], end=p[(i + 1) % 4]) for i in range(4)],
+        closed=True, handle=handle,
+    )
+
+
+def test_merge_common_edges_marks_the_broken_survivor_open():
+    # Two 100x100 squares sharing the x=100 edge. merge_common_edges removes the
+    # shared edge from one of them, which breaks its ring -- it must not stay
+    # is_closed=True (that violates Contour's contiguity invariant).
+    left = _square(0, 0, 100, "LEFT")
+    right = _square(100, 0, 100, "RIGHT")
+    result, diagnostics = dedupe_contours([left, right], merge_common_edges=True)
+    opened = [c for c in result if len(c.segments) == 3]
+    assert len(opened) == 1
+    assert opened[0].is_closed is False
+    assert any(d.code == "CONTOUR_OPENED_BY_DEDUPE" for d in diagnostics)
+    for c in result:
+        c.assert_contiguous()
