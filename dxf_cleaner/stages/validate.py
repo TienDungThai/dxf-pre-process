@@ -20,6 +20,9 @@ _WARNING_CODES = {
     "INVALID_POLYGON_FIXED",
     "3D_POLYLINE_PROJECTED",
     "UNSUPPORTED_INSUNITS",
+    # Simplify skipped a contour because it would have deviated area beyond the
+    # configured limit -- the operator should know it kept the denser original.
+    "SIMPLIFY_REVERTED_AREA_DEVIATION",
 }
 # Codes that are normal, expected cleanup actions. They are deliberately NOT
 # escalated to warnings; they are counted into the report's info block so they
