@@ -180,3 +180,30 @@ def test_assert_contiguous_raises_on_open_wraparound_of_closed_contour():
     contour = Contour(segments=segs, is_closed=True, source_layer="0", source_handle="7")
     with pytest.raises(ValueError, match="not contiguous"):
         contour.assert_contiguous()
+
+
+# Task 2: reverse_segment
+from dxf_cleaner.model import reverse_segment
+
+
+def test_reverse_segment_line_swaps_endpoints():
+    seg = Segment(kind="line", start=(0.0, 0.0), end=(1.0, 2.0))
+    rev = reverse_segment(seg)
+    assert rev.start == (1.0, 2.0)
+    assert rev.end == (0.0, 0.0)
+    assert rev.kind == "line"
+
+
+def test_reverse_segment_arc_flips_ccw_keeps_center_radius():
+    seg = Segment(kind="arc", start=(1.0, 0.0), end=(0.0, 1.0), center=(0.0, 0.0), radius=1.0, ccw=True)
+    rev = reverse_segment(seg)
+    assert rev.start == (0.0, 1.0)
+    assert rev.end == (1.0, 0.0)
+    assert rev.center == (0.0, 0.0)
+    assert rev.radius == 1.0
+    assert rev.ccw is False
+
+
+def test_reverse_segment_is_its_own_inverse():
+    seg = Segment(kind="arc", start=(1.0, 0.0), end=(0.0, 1.0), center=(0.0, 0.0), radius=1.0, ccw=True)
+    assert reverse_segment(reverse_segment(seg)) == seg

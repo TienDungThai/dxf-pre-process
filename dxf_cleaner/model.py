@@ -96,6 +96,18 @@ def scale_contour(contour: Contour, factor: float) -> Contour:
     )
 
 
+def reverse_segment(segment: Segment) -> Segment:
+    """Return a new Segment traversed in the opposite direction."""
+    return Segment(
+        kind=segment.kind,
+        start=segment.end,
+        end=segment.start,
+        center=segment.center,
+        radius=segment.radius,
+        ccw=(not segment.ccw) if segment.kind == "arc" else segment.ccw,
+    )
+
+
 def discretize_arc(segment: Segment, tolerance: float) -> list[Point]:
     """Sample points along an arc segment so consecutive samples deviate from the
     true arc by at most `tolerance` (chord/sagitta tolerance)."""
