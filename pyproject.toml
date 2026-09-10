@@ -8,10 +8,14 @@ dependencies = [
     "numpy>=1.26",
     "pydantic>=2.0,<3.0",
     "PyYAML>=6.0",
+    "click>=8.1",
 ]
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
+
+[project.scripts]
+dxfclean = "dxf_cleaner.cli:main"
 
 [build-system]
 requires = ["setuptools>=68"]
