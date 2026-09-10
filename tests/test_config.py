@@ -1,5 +1,5 @@
 import pytest
-from dxf_cleaner.config import Config, load_config
+from dxf_cleaner.config import Config, load_config, SnapConfig, DedupeConfig, DespeckleConfig, ValidateConfig
 
 
 def test_default_config_values():
@@ -32,3 +32,31 @@ def test_load_config_from_yaml_overrides_defaults(tmp_path):
 def test_config_rejects_invalid_assumed_unit():
     with pytest.raises(Exception):
         Config(input={"assumed_unit": "cm"})
+
+
+def test_new_phase2_config_defaults():
+    cfg = Config()
+    assert cfg.snap.tolerance == 0.05
+    assert cfg.snap.max_reportable_gap == 2.0
+    assert cfg.dedupe.enabled is True
+    assert cfg.dedupe.merge_common_edges is False
+    assert cfg.despeckle.min_perimeter == 0.5
+    assert cfg.despeckle.min_area == 0.1
+    assert cfg.validate.sheet_width == 1500
+    assert cfg.validate.sheet_height == 3000
+    assert cfg.validate.material_thickness == 2.0
+    assert cfg.validate.kerf_width == 0.15
+    assert cfg.validate.min_hole_diameter_ratio == 1.0
+
+
+def test_phase2_config_yaml_override(tmp_path):
+    yaml_path = tmp_path / "config.yaml"
+    yaml_path.write_text(
+        "snap:\n  tolerance: 0.1\n"
+        "dedupe:\n  merge_common_edges: true\n"
+    )
+    cfg = load_config(str(yaml_path))
+    assert cfg.snap.tolerance == 0.1
+    assert cfg.dedupe.merge_common_edges is True
+    # untouched sections keep defaults
+    assert cfg.despeckle.min_area == 0.1
