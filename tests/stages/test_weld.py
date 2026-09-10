@@ -64,6 +64,47 @@ def test_open_contours_pass_through_untouched():
     assert welded == set()
 
 
+def test_unrecoverable_polygon_is_passed_through_not_dropped(monkeypatch):
+    # _to_valid_polygon returns None when a closed contour's polygon is
+    # unrecoverable even after make_valid (e.g. a self-intersecting contour
+    # that collapses to a GeometryCollection of only lines/points). Real-world
+    # inputs that trigger this are hard to construct reliably because shapely's
+    # make_valid is robust, so we make the specific contour "BAD" unrecoverable
+    # by wrapping _to_valid_polygon and forcing it to return None only for that
+    # contour's handle, leaving the real logic untouched for every other input.
+    # This directly exercises the weld_contours branch under test: does the
+    # contour get silently dropped, or passed through to `result` unwelded?
+    import dxf_cleaner.stages.weld as weld_mod
+
+    bad = _square(0, 0, 10, handle="BAD")
+    good = _square(50, 50, 10, handle="GOOD")
+
+    orig_to_valid_polygon = weld_mod._to_valid_polygon
+
+    def fake_to_valid_polygon(contour, arc_tolerance, diagnostics):
+        if contour.source_handle == "BAD":
+            diagnostics.append(weld_mod.Diagnostic(
+                code="POLYGON_UNRECOVERABLE",
+                message="Could not recover a usable polygon for weld",
+                handle=contour.source_handle,
+            ))
+            return None
+        return orig_to_valid_polygon(contour, arc_tolerance, diagnostics)
+
+    monkeypatch.setattr(weld_mod, "_to_valid_polygon", fake_to_valid_polygon)
+
+    result, diags, welded = weld_contours([bad, good], mode="overlapping")
+
+    codes = {d.code for d in diags}
+    assert "POLYGON_UNRECOVERABLE" in codes
+
+    handles = {c.source_handle for c in result}
+    assert "BAD" in handles
+    bad_result = next(c for c in result if c.source_handle == "BAD")
+    assert bad_result == bad
+    assert "GOOD" in handles
+
+
 def test_welded_ring_is_contiguous_for_circular_input():
     # A discretized circle's re-welded arc detection must produce a contiguous
     # contour even when the ring's boundary wraps past its closing point.

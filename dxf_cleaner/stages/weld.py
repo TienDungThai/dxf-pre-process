@@ -148,22 +148,24 @@ def weld_contours(
 
     polygons: list[Polygon] = []
     valid_closed: list[Contour] = []
+    unrecoverable: list[Contour] = []
     for c in closed_contours:
         poly = _to_valid_polygon(c, arc_tolerance, diagnostics)
         if poly is None:
+            unrecoverable.append(c)
             continue
         polygons.append(poly)
         valid_closed.append(c)
 
     if not polygons:
-        return list(open_contours), diagnostics, set()
+        return list(open_contours) + unrecoverable, diagnostics, set()
 
     if mode == "all":
         clusters = [list(range(len(polygons)))]
     else:
         clusters = _cluster_by_overlap(polygons)
 
-    result: list[Contour] = list(open_contours)
+    result: list[Contour] = list(open_contours) + unrecoverable
     welded_handles: set[str] = set()
     for cluster in clusters:
         if len(cluster) < 2:
