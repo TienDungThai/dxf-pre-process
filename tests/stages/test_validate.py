@@ -69,6 +69,19 @@ def test_hole_smaller_than_material_thickness_is_a_warning():
     report = validate([part], [], cfg, BASE_STATS)
     assert report.level == "warning"
     assert any("hole" in w.lower() for w in report.warnings)
+    # The hole is comfortably far (>= 9mm) from its own exterior boundary, well beyond
+    # 2x the default kerf width, so no spurious "closer than 2x kerf" warning against
+    # itself should be emitted (regression test for exterior/hole self-comparison bug).
+    assert not any("close" in w.lower() or "kerf" in w.lower() for w in report.warnings)
+
+
+def test_hole_far_from_own_exterior_produces_no_spacing_warning():
+    outer = _square_contour(0, 0, 100, "OUTER")
+    hole = _square_contour(45, 45, 10, "HOLE")  # centered, walls are 45mm thick
+    part = Part(exterior=outer, interiors=[hole])
+    cfg = ValidateConfig(kerf_width=0.1)  # 2x kerf = 0.2mm, far smaller than the 45mm wall
+    report = validate([part], [], cfg, BASE_STATS)
+    assert not any("close" in w.lower() or "kerf" in w.lower() for w in report.warnings)
 
 
 def test_parts_closer_than_2x_kerf_is_a_warning():

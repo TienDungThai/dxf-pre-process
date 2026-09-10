@@ -51,11 +51,11 @@ def validate(
                 f"for the configured sheet ({config.sheet_width}x{config.sheet_height}mm)"
             )
 
-    all_geoms: list[tuple[str, Polygon]] = []
-    for part in parts:
-        all_geoms.append((part.exterior.source_handle, Polygon(part.exterior.to_shapely())))
+    all_geoms: list[tuple[str, Polygon, int]] = []
+    for part_index, part in enumerate(parts):
+        all_geoms.append((part.exterior.source_handle, Polygon(part.exterior.to_shapely()), part_index))
         for hole in part.interiors:
-            all_geoms.append((hole.source_handle, Polygon(hole.to_shapely())))
+            all_geoms.append((hole.source_handle, Polygon(hole.to_shapely()), part_index))
             diameter = _hole_diameter(all_geoms[-1][1])
             min_diameter = config.min_hole_diameter_ratio * config.material_thickness
             if diameter < min_diameter:
@@ -77,8 +77,10 @@ def validate(
                 )
 
     min_gap = 2 * config.kerf_width
-    for i, (name_a, geom_a) in enumerate(all_geoms):
-        for name_b, geom_b in all_geoms[i + 1:]:
+    for i, (name_a, geom_a, part_index_a) in enumerate(all_geoms):
+        for name_b, geom_b, part_index_b in all_geoms[i + 1:]:
+            if part_index_a == part_index_b:
+                continue
             if geom_a.distance(geom_b) < min_gap and not geom_a.equals(geom_b):
                 warnings.append(
                     f"{name_a!r} and {name_b!r} are closer than 2x kerf width ({min_gap}mm)"
