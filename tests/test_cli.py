@@ -1,5 +1,7 @@
 import ezdxf
+import numpy as np
 from click.testing import CliRunner
+from PIL import Image
 
 from dxf_cleaner.cli import main
 
@@ -103,3 +105,62 @@ def test_nonexistent_input_path_is_a_usage_error(tmp_path):
     result = CliRunner().invoke(main, [str(tmp_path / "does_not_exist.dxf")])
 
     assert result.exit_code != 0
+
+
+def _square_with_hole_png(tmp_path, name="square.png", size=200):
+    img = np.full((size, size, 3), 255, dtype=np.uint8)
+    img[20:180, 20:180] = 0
+    yy, xx = np.mgrid[0:size, 0:size]
+    hole = (xx - 100) ** 2 + (yy - 100) ** 2 <= 30 ** 2
+    img[hole] = 255
+    path = tmp_path / name
+    Image.fromarray(img, mode="RGB").save(path)
+    return path
+
+
+def test_png_input_with_width_mm_writes_dxf_and_preview(tmp_path):
+    input_path = _square_with_hole_png(tmp_path)
+    output_path = tmp_path / "out.dxf"
+
+    result = CliRunner().invoke(
+        main, [str(input_path), "-o", str(output_path), "-w", "160"]
+    )
+
+    assert result.exit_code in (0, 1)  # ok or warning, not a system/critical failure
+    assert output_path.exists()
+    assert (tmp_path / "square_KIEMTRA.png").exists()
+
+
+def test_png_input_check_mode_still_writes_preview_but_not_dxf(tmp_path):
+    input_path = _square_with_hole_png(tmp_path)
+    output_path = tmp_path / "out.dxf"
+
+    result = CliRunner().invoke(
+        main, [str(input_path), "-o", str(output_path), "-w", "160", "--check"]
+    )
+
+    assert result.exit_code in (0, 1)
+    assert not output_path.exists()
+    assert (tmp_path / "square_KIEMTRA.png").exists()
+
+
+def test_width_and_height_mm_are_mutually_exclusive(tmp_path):
+    input_path = _square_with_hole_png(tmp_path)
+
+    result = CliRunner().invoke(
+        main, [str(input_path), "-w", "160", "-H", "160"]
+    )
+
+    assert result.exit_code != 0
+
+
+def test_directory_mode_picks_up_png_files(tmp_path):
+    _square_with_hole_png(tmp_path, name="a.png")
+    output_dir = tmp_path / "out"
+
+    result = CliRunner().invoke(
+        main, [str(tmp_path), "-o", str(output_dir), "-w", "160"]
+    )
+
+    assert result.exit_code in (0, 1)
+    assert (output_dir / "a.clean.dxf").exists()
