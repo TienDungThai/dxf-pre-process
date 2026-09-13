@@ -234,3 +234,43 @@ def test_simplify_remap_is_positional_not_by_duplicate_handle(tmp_path, monkeypa
     # dict happened to keep last.
     assert areas == [pytest.approx(100.0), pytest.approx(400.0)]
     assert result.report.info["weld_count"] == 0
+
+
+def test_run_pipeline_on_png_input_produces_one_part_with_hole(tmp_path):
+    import numpy as np
+    from PIL import Image
+    from dxf_cleaner.pipeline import run_pipeline
+    from dxf_cleaner.config import Config
+
+    size = 200
+    img = np.full((size, size, 3), 255, dtype=np.uint8)
+    img[20:180, 20:180] = 0
+    yy, xx = np.mgrid[0:size, 0:size]
+    hole = (xx - 100) ** 2 + (yy - 100) ** 2 <= 30 ** 2
+    img[hole] = 255
+    path = tmp_path / "square.png"
+    Image.fromarray(img, mode="RGB").save(path)
+
+    result = run_pipeline(str(path), Config(), width_mm=160.0)
+
+    assert len(result.parts) == 1
+    assert len(result.parts[0].interiors) == 1
+    assert "min_feature_width_mm" in result.report.info
+
+
+def test_run_pipeline_on_dxf_input_still_works_without_new_kwargs(tmp_path):
+    import ezdxf
+    from dxf_cleaner.pipeline import run_pipeline
+    from dxf_cleaner.config import Config
+
+    doc = ezdxf.new("R2000")
+    doc.header["$INSUNITS"] = 4
+    msp = doc.modelspace()
+    msp.add_lwpolyline([(0, 0), (10, 0), (10, 10), (0, 10)], close=True)
+    path = tmp_path / "square.dxf"
+    doc.saveas(path)
+
+    result = run_pipeline(str(path), Config())
+
+    assert len(result.parts) == 1
+    assert "min_feature_width_mm" not in result.report.info

@@ -1,8 +1,10 @@
 from dataclasses import dataclass
+from pathlib import Path
 
 from dxf_cleaner.config import Config
 from dxf_cleaner.model import Part, Contour, Diagnostic
 from dxf_cleaner.reader import read_dxf
+from dxf_cleaner.raster import read_raster
 from dxf_cleaner.writer import write_dxf
 from dxf_cleaner.stages.snap import snap_and_chain
 from dxf_cleaner.stages.dedupe import dedupe_contours
@@ -28,8 +30,23 @@ def parts_to_contours(parts: list[Part]) -> list[Contour]:
     return contours
 
 
-def run_pipeline(input_path: str, config: Config) -> PipelineResult:
-    read_result = read_dxf(input_path, config)
+_RASTER_SUFFIXES = {".png", ".jpg", ".jpeg"}
+
+
+def run_pipeline(
+    input_path: str,
+    config: Config,
+    *,
+    width_mm: float | None = None,
+    height_mm: float | None = None,
+    preview_path: str | None = None,
+) -> PipelineResult:
+    if Path(input_path).suffix.lower() in _RASTER_SUFFIXES:
+        read_result = read_raster(
+            input_path, config, width_mm=width_mm, height_mm=height_mm, preview_path=preview_path
+        )
+    else:
+        read_result = read_dxf(input_path, config)
     diagnostics: list[Diagnostic] = list(read_result.diagnostics)
 
     contour_count_before = len(read_result.contours)
@@ -96,6 +113,8 @@ def run_pipeline(input_path: str, config: Config) -> PipelineResult:
         closed_count=closed_count,
         weld_count=weld_count,
     )
+    if read_result.raster_stats is not None:
+        stats.update(read_result.raster_stats)
     report = validate(parts, diagnostics, config.validate, stats)
 
     return PipelineResult(parts=parts, diagnostics=diagnostics, report=report)
