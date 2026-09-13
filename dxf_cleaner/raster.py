@@ -3,6 +3,8 @@ import cv2
 from PIL import Image
 from shapely.geometry import Polygon
 from skimage.measure import find_contours
+from scipy.ndimage import distance_transform_edt
+from skimage.morphology import skeletonize
 
 
 def load_binary(path: str, threshold: int | None, invert: bool) -> tuple[np.ndarray, float, tuple[int, int]]:
@@ -53,3 +55,24 @@ def trace_mask(mask: np.ndarray, min_area_px: float, smooth_sigma: float) -> lis
 
     rings.sort(key=lambda r: -Polygon(r).area)
     return rings
+
+
+def measure_min_width_px(mask: np.ndarray, prune_iterations: int) -> tuple[float, int, np.ndarray, np.ndarray]:
+    """Minimum feature width via medial-axis distance transform. `prune_iterations`
+    trims short skeleton spurs (sharp corners produce spurious thin branches)
+    before taking the minimum distance-transform value along the skeleton."""
+    kept = mask > 0
+    dist = distance_transform_edt(kept)
+    skel = skeletonize(kept)
+
+    kernel = np.ones((3, 3), np.uint8)
+    for _ in range(prune_iterations):
+        neighbor_count = cv2.filter2D(skel.astype(np.uint8), -1, kernel, borderType=cv2.BORDER_CONSTANT)
+        skel = skel & ~((neighbor_count <= 2) & skel)
+    if not skel.any():
+        skel = skeletonize(kept)
+
+    widths = dist[skel] * 2.0
+    n_parts = cv2.connectedComponents(mask)[0] - 1
+    min_width_px = float(widths.min()) if widths.size else 0.0
+    return min_width_px, n_parts, dist, skel

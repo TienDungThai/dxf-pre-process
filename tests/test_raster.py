@@ -79,3 +79,36 @@ def test_trace_mask_drops_specks_below_min_area(tmp_path):
     rings = trace_mask(mask, min_area_px=50.0, smooth_sigma=0.0)
 
     assert len(rings) == 1
+
+
+def test_measure_min_width_detects_thin_bar(tmp_path):
+    from dxf_cleaner.raster import load_binary, measure_min_width_px
+
+    size = 200
+    img = np.full((size, size, 3), 255, dtype=np.uint8)
+    img[20:80, 20:80] = 0     # thick block, 60px wide
+    img[75:85, 20:180] = 0    # thin bar, 10px wide (overlaps to connect blocks)
+    img[20:80, 120:180] = 0   # another thick block
+    path = _save_png(tmp_path, "dumbbell.png", img)
+    mask, _, _ = load_binary(path, threshold=None, invert=False)
+
+    min_width_px, n_parts, dist, skel = measure_min_width_px(mask, prune_iterations=3)
+
+    assert 8.0 <= min_width_px <= 12.0
+    assert n_parts == 1  # bar connects both blocks into one component
+    assert dist.shape == mask.shape
+    assert skel.shape == mask.shape
+
+
+def test_measure_min_width_counts_disconnected_parts(tmp_path):
+    from dxf_cleaner.raster import load_binary, measure_min_width_px
+
+    img = np.full((100, 100, 3), 255, dtype=np.uint8)
+    img[10:30, 10:30] = 0
+    img[60:80, 60:80] = 0
+    path = _save_png(tmp_path, "two_blocks.png", img)
+    mask, _, _ = load_binary(path, threshold=None, invert=False)
+
+    _, n_parts, _, _ = measure_min_width_px(mask, prune_iterations=3)
+
+    assert n_parts == 2
