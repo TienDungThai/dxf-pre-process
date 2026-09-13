@@ -62,27 +62,35 @@ def snap_and_chain(
     def canon_point(endpoint_idx: int) -> Point:
         return canonical[_find(parent, endpoint_idx)]
 
-    snapped_segments = [
-        Segment(
+    snapped_with_indices = [
+        (i, Segment(
             kind=seg.kind,
             start=canon_point(2 * i),
             end=canon_point(2 * i + 1),
             center=seg.center,
             radius=seg.radius,
             ccw=seg.ccw,
-        )
+        ))
         for i, seg in enumerate(segments)
     ]
+    # Filter out zero-length segments
+    snapped_with_indices = [
+        (orig_idx, seg) for orig_idx, seg in snapped_with_indices
+        if seg.start != seg.end
+    ]
+    snapped_segments = [seg for _, seg in snapped_with_indices]
 
     adjacency: dict[Point, list[tuple[int, str]]] = {}
     for i, seg in enumerate(snapped_segments):
         adjacency.setdefault(seg.start, []).append((i, "start"))
         adjacency.setdefault(seg.end, []).append((i, "end"))
 
-    used = [False] * n
+    used = [False] * len(snapped_segments)
     chains: list[tuple[list[Segment], bool, str, str]] = []
+    # Map filtered segment index back to original segment index
+    filtered_to_orig = [orig_idx for orig_idx, _ in snapped_with_indices]
 
-    for i in range(n):
+    for i in range(len(snapped_segments)):
         if used[i]:
             continue
         used[i] = True
@@ -109,7 +117,8 @@ def snap_and_chain(
                 seg = reverse_segment(seg)
             chain.append(seg)
             current_end = seg.end
-        chains.append((chain, closed, layers[i], handles[i]))
+        orig_idx = filtered_to_orig[i]
+        chains.append((chain, closed, layers[orig_idx], handles[orig_idx]))
 
     result_contours = [
         Contour(segments=segs, is_closed=closed, source_layer=layer, source_handle=handle)
