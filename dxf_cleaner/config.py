@@ -52,6 +52,15 @@ class OutputConfig(BaseModel):
     preserve_arcs: bool = True
 
 
+class RasterConfig(BaseModel):
+    pixels_per_mm: float | None = None
+    threshold: int | None = None
+    invert: bool = False
+    min_area_px: float = 20.0
+    smooth_sigma: float = 1.0
+    prune_mm: float = 5.0
+
+
 class Config(BaseModel):
     input: InputConfig = InputConfig()
     flatten: FlattenConfig = FlattenConfig()
@@ -62,6 +71,7 @@ class Config(BaseModel):
     simplify: SimplifyConfig = SimplifyConfig()
     validate: ValidateConfig = ValidateConfig()
     output: OutputConfig = OutputConfig()
+    raster: RasterConfig = RasterConfig()
 
 
 def load_config(path: str | None) -> Config:

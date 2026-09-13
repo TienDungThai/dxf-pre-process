@@ -80,3 +80,15 @@ def test_simplify_config_defaults():
 def test_weld_mode_rejects_invalid_value():
     with pytest.raises(ValidationError):
         Config(weld={"mode": "bogus"})
+
+
+# Task 2: RasterConfig
+def test_raster_config_defaults():
+    from dxf_cleaner.config import Config
+    config = Config()
+    assert config.raster.pixels_per_mm is None
+    assert config.raster.threshold is None
+    assert config.raster.invert is False
+    assert config.raster.min_area_px == 20.0
+    assert config.raster.smooth_sigma == 1.0
+    assert config.raster.prune_mm == 5.0
