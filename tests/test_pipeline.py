@@ -320,6 +320,38 @@ def test_run_pipeline_writes_preview_with_correct_hole_and_exterior_colors(tmp_p
     assert _color_present_near((0, 120, 200), row=70, col=100), "hole boundary not drawn in blue"
 
 
+def test_run_pipeline_warns_when_weld_drops_boundaries_from_preview(tmp_path):
+    # Regression: weld_contours re-emits a union under a NEW source_handle
+    # ("WELD_..."), so a welded raster shape has no entry in
+    # rings_px_by_handle and its outline is silently missing from the
+    # mandatory _KIEMTRA.png check image -- while the shape itself is still
+    # very much present in the cleaned DXF output. weld.mode="all" unions
+    # every closed contour unconditionally, so even a simple square-with-hole
+    # image (2 closed contours: exterior + hole) triggers it.
+    import numpy as np
+    from PIL import Image
+    from dxf_cleaner.pipeline import run_pipeline
+    from dxf_cleaner.config import Config
+
+    size = 200
+    img = np.full((size, size, 3), 255, dtype=np.uint8)
+    img[20:180, 20:180] = 0
+    yy, xx = np.mgrid[0:size, 0:size]
+    hole = (xx - 100) ** 2 + (yy - 100) ** 2 <= 30 ** 2
+    img[hole] = 255
+    path = tmp_path / "square.png"
+    Image.fromarray(img, mode="RGB").save(path)
+    preview_path = tmp_path / "square_KIEMTRA.png"
+
+    config = Config(weld={"mode": "all"})
+    result = run_pipeline(str(path), config, width_mm=160.0, preview_path=str(preview_path))
+
+    assert preview_path.exists()
+    codes = [d.code for d in result.diagnostics]
+    assert "PREVIEW_INCOMPLETE" in codes
+    assert result.report.level == "warning"
+
+
 def test_run_pipeline_on_dxf_input_still_works_without_new_kwargs(tmp_path):
     import ezdxf
     from dxf_cleaner.pipeline import run_pipeline

@@ -31,6 +31,11 @@ _WARNING_CODES = {
     # fill/border ratios) rather than silently dropped.
     "RASTER_LOW_DPI",
     "RASTER_POSSIBLE_INVERTED",
+    # A boundary survived into the cleaned output but couldn't be matched
+    # back to a traced ring for the _KIEMTRA.png preview (typically because
+    # weld merged it under a new handle) -- the operator must know the
+    # preview is missing an outline for a shape that is still being cut.
+    "PREVIEW_INCOMPLETE",
 }
 # Warning codes whose Diagnostic.message already contains the useful,
 # computed detail (e.g. the actual DPI value) -- surface that message
@@ -38,6 +43,7 @@ _WARNING_CODES = {
 _WARNING_CODES_WITH_OWN_MESSAGE = {
     "RASTER_LOW_DPI",
     "RASTER_POSSIBLE_INVERTED",
+    "PREVIEW_INCOMPLETE",
 }
 # Codes that are normal, expected cleanup actions. They are deliberately NOT
 # escalated to warnings; they are counted into the report's info block so they

@@ -246,6 +246,36 @@ def test_directory_mode_without_output_writes_report_next_to_input(tmp_path):
     assert len(rows) == 2
 
 
+def test_directory_mode_one_broken_file_does_not_lose_the_whole_batch_report(tmp_path):
+    # Regression: a mid-batch exception used to propagate straight to the
+    # top-level "System error" handler, which exits before
+    # _write_batch_report ever runs -- silently discarding the rows already
+    # collected for every file that succeeded before the broken one.
+    import csv
+
+    input_dir = tmp_path / "in"
+    input_dir.mkdir()
+    _clean_square_doc().saveas(input_dir / "a.dxf")
+    (input_dir / "broken.dxf").write_text("this is not a valid DXF file")
+    _clean_square_doc().saveas(input_dir / "z.dxf")
+
+    result = CliRunner().invoke(main, [str(input_dir)])
+
+    assert result.exit_code == 3
+    report_path = input_dir / "BAO-CAO.csv"
+    assert report_path.exists()
+
+    with open(report_path, newline="", encoding="utf-8-sig") as f:
+        rows = {row["file"]: row for row in csv.DictReader(f)}
+
+    assert set(rows.keys()) == {"a.dxf", "broken.dxf", "z.dxf"}
+    assert rows["a.dxf"]["status"] == "ok"
+    assert rows["z.dxf"]["status"] == "ok"
+    assert rows["broken.dxf"]["status"] == "error"
+    assert (input_dir / "a.clean.dxf").exists()
+    assert (input_dir / "z.clean.dxf").exists()
+
+
 def test_single_file_mode_does_not_write_batch_report(tmp_path):
     doc = _clean_square_doc()
     input_path = tmp_path / "square.dxf"

@@ -243,7 +243,7 @@ def test_multiple_parts_from_raster_input_warns_about_micro_joint():
     report = validate(parts, [], ValidateConfig(), stats)
 
     assert report.level == "warning"
-    assert any("micro joint" in w.lower() or "n_parts" in w.lower() or "2" in w for w in report.warnings)
+    assert any("micro joint" in w.lower() for w in report.warnings)
 
 
 def test_single_part_does_not_warn_about_micro_joint():

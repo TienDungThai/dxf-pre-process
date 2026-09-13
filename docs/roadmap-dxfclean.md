@@ -1,8 +1,12 @@
 # Roadmap cải tiến `dxfclean` — thu hẹp khoảng cách với `png2dxf.py`
 
+**Trạng thái: ✅ Cả 4 mục đã triển khai xong** (nhánh `feature/dxfclean-roadmap`).
+
 Nguồn: mục 8 của [huong-dan-su-dung-png.md](huong-dan-su-dung-png.md) — các điểm `dxfclean` hiện đang kém hơn công cụ `png2dxf.py` cũ. Ghi lại thành roadmap để không quên và có thứ tự ưu tiên khi làm.
 
 Không mục nào ở đây ảnh hưởng đến độ chính xác cắt (accuracy) — toàn bộ là tiện ích vận hành (UX/workflow). Việc cắt đã đúng nhờ tái dùng chung pipeline với DXF.
+
+**Lưu ý rút ra khi triển khai mục 2:** ban đầu roadmap này xếp việc ảnh kiểm tra chưa phân màu biên ngoài/lỗ là *"không sai về mặt cắt, chỉ gây khó đọc"* — đánh giá thấp rủi ro. Review độc lập phát hiện: khi `--weld-mode all` hợp nhất các contour dưới 1 handle mới, contour đó vẫn tồn tại trong DXF xuất ra nhưng **biến mất hoàn toàn khỏi ảnh `_KIEMTRA.png`** — tức ảnh kiểm tra bắt buộc có thể thiếu outline mà không ai biết. Đã vá bằng cách thêm diagnostic `PREVIEW_INCOMPLETE` (warning) mỗi khi có contour không khớp được ring để vẽ, thay vì bỏ qua âm thầm.
 
 ---
 

@@ -33,31 +33,49 @@ def parts_to_contours(parts: list[Part]) -> list[Contour]:
 _RASTER_SUFFIXES = {".png", ".jpg", ".jpeg"}
 
 
-def _render_raster_preview(parts: list[Part], preview_data: dict, preview_path: str) -> None:
+def _render_raster_preview(parts: list[Part], preview_data: dict, preview_path: str) -> list[Diagnostic]:
     """Render the _KIEMTRA.png preview AFTER build_hierarchy has classified
     exterior vs. hole, so each ring is drawn in its correct color -- unlike
     read_raster (which runs before hierarchy classification exists), this
     knows exactly which contours are holes.
 
-    A contour dropped between read_raster and here (by despeckle, or merged
-    away by weld into a new handle) simply has no entry in
-    rings_px_by_handle and is silently skipped -- it no longer exists in the
-    cleaned output, so it has nothing to preview."""
+    A contour whose source_handle has no entry in rings_px_by_handle (most
+    commonly: despeckle removed it, or weld_contours re-emitted it under a
+    NEW handle such as "WELD_<a>_<b>") has no traced ring to draw -- but that
+    contour is still very much present in the cleaned DXF output. Silently
+    leaving it out of the "mandatory pre-cut check" image would be
+    misleading, so any such gap is reported back as a diagnostic instead of
+    being swallowed."""
     rings_px_by_handle = preview_data["rings_px_by_handle"]
     ordered_rings = []
     holes_by_ring = []
+    missing_count = 0
     for part in parts:
         for contour, is_hole in [(part.exterior, False)] + [(hole, True) for hole in part.interiors]:
             ring_px = rings_px_by_handle.get(contour.source_handle)
             if ring_px is not None:
                 ordered_rings.append(ring_px)
                 holes_by_ring.append(is_hole)
+            else:
+                missing_count += 1
 
     render_preview(
         preview_data["mask"], ordered_rings, holes_by_ring,
         preview_data["dist"], preview_data["skel"], preview_data["thin_threshold_px"],
         preview_path,
     )
+
+    if missing_count == 0:
+        return []
+    return [Diagnostic(
+        code="PREVIEW_INCOMPLETE",
+        message=(
+            f"{missing_count} boundary(ies) could not be matched back to a traced ring "
+            f"(commonly caused by weld merging raster contours under a new handle) and "
+            f"are missing from {preview_path} -- do not rely on the preview image alone "
+            f"for hole/exterior verification on this file"
+        ),
+    )]
 
 
 def run_pipeline(
@@ -104,7 +122,7 @@ def run_pipeline(
     diagnostics.extend(hierarchy_diags)
 
     if read_result.raster_preview_data is not None and preview_path is not None:
-        _render_raster_preview(parts, read_result.raster_preview_data, preview_path)
+        diagnostics.extend(_render_raster_preview(parts, read_result.raster_preview_data, preview_path))
 
     if config.simplify.enabled:
         touched_handles = read_result.flattened_handles | welded_handles

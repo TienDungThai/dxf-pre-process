@@ -92,8 +92,9 @@ def _apply_overrides(config: Config, snap_tol: float | None, weld_mode: str | No
 @click.option("--config", "config_path", type=click.Path(exists=True, path_type=Path), default=None,
               help="Path to a config.yaml overriding defaults.")
 @click.option("--check", is_flag=True, default=False,
-              help="Only report; never write an output file. Note: for raster input, the "
-                   "<stem>_KIEMTRA.png preview image is still written even in check mode.")
+              help="Only report; never write an output DXF. Note: for raster input, the "
+                   "<stem>_KIEMTRA.png preview image is still written even in check mode, "
+                   "and in directory mode BAO-CAO.csv is still written too.")
 @click.option("--snap-tol", type=float, default=None, help="Override snap.tolerance.")
 @click.option("--weld-mode", type=click.Choice(["off", "overlapping", "all"]), default=None,
               help="Override weld.mode.")
@@ -149,7 +150,15 @@ def main(input_path: Path, output_path: Path | None, config_path: Path | None, c
             batch_rows: list[dict] = []
             for f in dxf_files:
                 target = (output_path / f"{f.stem}.clean.dxf") if output_path is not None else None
-                worst = max(worst, _process_one(f, target, config, check, width_mm, height_mm, batch_rows))
+                try:
+                    worst = max(worst, _process_one(f, target, config, check, width_mm, height_mm, batch_rows))
+                except Exception as exc:
+                    # One broken file must not discard the batch report for
+                    # every file that already succeeded -- record it as an
+                    # error row and keep processing the rest of the directory.
+                    click.secho(f"{f}: System error: {exc}", fg="red", err=True)
+                    batch_rows.append({"file": f.name, "status": "error"})
+                    worst = max(worst, 3)
             report_dir = output_path if output_path is not None else input_path
             report_path = _write_batch_report(batch_rows, report_dir)
             click.echo(f"Batch report: {report_path}")
