@@ -134,3 +134,83 @@ def test_render_preview_writes_valid_png_matching_mask_size(tmp_path):
     assert out_path.exists()
     preview = Image.open(out_path)
     assert preview.size == (mask.shape[1], mask.shape[0])
+
+
+def test_read_raster_produces_closed_line_contours_with_stats(tmp_path):
+    from dxf_cleaner.config import Config
+    from dxf_cleaner.raster import read_raster
+
+    img = _square_with_hole_image(size=200, margin=20, hole_radius=30)
+    path = _save_png(tmp_path, "square.png", img)
+
+    result = read_raster(str(path), Config(), width_mm=160.0)
+
+    assert result.unit_scale == 1.0
+    assert result.flattened_handles == set()
+    assert len(result.contours) == 2
+    for contour in result.contours:
+        assert contour.is_closed
+        assert all(seg.kind == "line" for seg in contour.segments)
+
+    stats = result.raster_stats
+    assert stats is not None
+    assert stats["width_mm"] == pytest.approx(160.0, rel=0.01)
+    assert stats["n_parts"] == 1
+    assert stats["min_feature_width_mm"] > 0
+
+
+def test_read_raster_flags_low_dpi(tmp_path):
+    from dxf_cleaner.config import Config
+    from dxf_cleaner.raster import read_raster
+
+    img = _square_with_hole_image(size=200, margin=20, hole_radius=30)
+    path = _save_png(tmp_path, "square.png", img)
+
+    # 200px stretched to 500mm is well under 300 DPI
+    result = read_raster(str(path), Config(), width_mm=500.0)
+
+    codes = [d.code for d in result.diagnostics]
+    assert "RASTER_LOW_DPI" in codes
+
+
+def test_read_raster_flags_possible_inversion(tmp_path):
+    from dxf_cleaner.config import Config
+    from dxf_cleaner.raster import read_raster
+
+    # nearly-all-black image with a small white speck: looks inverted
+    img = np.zeros((200, 200, 3), dtype=np.uint8)
+    img[90:110, 90:110] = 255
+    path = _save_png(tmp_path, "suspect.png", img)
+
+    result = read_raster(str(path), Config(), width_mm=100.0)
+
+    codes = [d.code for d in result.diagnostics]
+    assert "RASTER_POSSIBLE_INVERTED" in codes
+
+
+def test_read_raster_writes_preview_when_path_given(tmp_path):
+    from dxf_cleaner.config import Config
+    from dxf_cleaner.raster import read_raster
+
+    img = _square_with_hole_image()
+    path = _save_png(tmp_path, "square.png", img)
+    preview_path = tmp_path / "square_KIEMTRA.png"
+
+    read_raster(str(path), Config(), width_mm=160.0, preview_path=str(preview_path))
+
+    assert preview_path.exists()
+
+
+def test_read_raster_and_hierarchy_together_yield_one_part_one_hole(tmp_path):
+    from dxf_cleaner.config import Config
+    from dxf_cleaner.raster import read_raster
+    from dxf_cleaner.stages.hierarchy import build_hierarchy
+
+    img = _square_with_hole_image()
+    path = _save_png(tmp_path, "square.png", img)
+
+    result = read_raster(str(path), Config(), width_mm=160.0)
+    parts, diagnostics = build_hierarchy(result.contours)
+
+    assert len(parts) == 1
+    assert len(parts[0].interiors) == 1

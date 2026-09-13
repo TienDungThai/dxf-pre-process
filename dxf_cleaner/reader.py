@@ -147,6 +147,7 @@ class ReadResult:
     diagnostics: list[Diagnostic]
     unit_scale: float
     flattened_handles: set[str]
+    raster_stats: dict[str, float] | None = None
 
 
 def _convert_entity(entity, config: Config) -> tuple[Contour | None, Diagnostic | None]:
