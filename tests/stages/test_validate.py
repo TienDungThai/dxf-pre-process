@@ -176,3 +176,45 @@ def test_genuinely_overlapping_parts_produce_an_overlap_warning():
     assert len(overlap_warnings) == 1
     assert "'A'" in overlap_warnings[0] and "'B'" in overlap_warnings[0]
     assert not any("kerf" in w for w in report.warnings)
+
+
+def test_min_feature_width_below_thickness_is_critical():
+    part = Part(exterior=_square_contour(0, 0, 100, "A"))
+    stats = dict(BASE_STATS, min_feature_width_mm=1.0)
+    config = ValidateConfig(material_thickness=2.0)
+
+    report = validate([part], [], config, stats)
+
+    assert report.level == "critical"
+    assert any("1.0" in c or "1.00" in c for c in report.critical)
+
+
+def test_min_feature_width_below_double_thickness_is_warning():
+    part = Part(exterior=_square_contour(0, 0, 100, "A"))
+    stats = dict(BASE_STATS, min_feature_width_mm=3.0)
+    config = ValidateConfig(material_thickness=2.0)
+
+    report = validate([part], [], config, stats)
+
+    assert report.level == "warning"
+    assert any("3.0" in w or "3.00" in w for w in report.warnings)
+
+
+def test_min_feature_width_above_double_thickness_is_ok():
+    part = Part(exterior=_square_contour(0, 0, 100, "A"))
+    stats = dict(BASE_STATS, min_feature_width_mm=5.0)
+    config = ValidateConfig(material_thickness=2.0)
+
+    report = validate([part], [], config, stats)
+
+    assert report.level == "ok"
+
+
+def test_missing_min_feature_width_is_skipped():
+    part = Part(exterior=_square_contour(0, 0, 100, "A"))
+    stats = dict(BASE_STATS)  # no "min_feature_width_mm" key -- DXF input case
+    config = ValidateConfig(material_thickness=2.0)
+
+    report = validate([part], [], config, stats)
+
+    assert report.level == "ok"

@@ -97,6 +97,20 @@ def validate(
                     f"the material-thickness-derived minimum {min_diameter:.3f}mm"
                 )
 
+    min_feature_width_mm = stats.get("min_feature_width_mm")
+    if min_feature_width_mm is not None:
+        thickness = config.material_thickness
+        if min_feature_width_mm < thickness:
+            critical.append(
+                f"Thinnest feature {min_feature_width_mm:.2f}mm is narrower than the "
+                f"material thickness {thickness:.2f}mm -- cannot cut"
+            )
+        elif min_feature_width_mm < 2 * thickness:
+            warnings.append(
+                f"Thinnest feature {min_feature_width_mm:.2f}mm is narrower than 2x the "
+                f"material thickness ({2 * thickness:.2f}mm) -- risk of warping/burn"
+            )
+
     part_polygons = [Polygon(part.exterior.to_shapely()) for part in parts]
     for i, part_a in enumerate(parts):
         poly_a = part_polygons[i]
