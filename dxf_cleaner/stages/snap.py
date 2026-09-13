@@ -62,22 +62,30 @@ def snap_and_chain(
     def canon_point(endpoint_idx: int) -> Point:
         return canonical[_find(parent, endpoint_idx)]
 
-    snapped_with_indices = [
-        (i, Segment(
+    snapped_all = [
+        Segment(
             kind=seg.kind,
             start=canon_point(2 * i),
             end=canon_point(2 * i + 1),
             center=seg.center,
             radius=seg.radius,
             ccw=seg.ccw,
-        ))
+        )
         for i, seg in enumerate(segments)
     ]
-    # Filter out zero-length segments
-    snapped_with_indices = [
-        (orig_idx, seg) for orig_idx, seg in snapped_with_indices
-        if seg.start != seg.end
-    ]
+    # Filter out zero-length segments (both endpoints snapped to the same
+    # clustered point), which otherwise crash downstream stages that divide
+    # by segment length (e.g. dedupe._line_group_key).
+    snapped_with_indices: list[tuple[int, Segment]] = []
+    for orig_idx, seg in enumerate(snapped_all):
+        if seg.start == seg.end:
+            diagnostics.append(Diagnostic(
+                code="ZERO_LENGTH_SEGMENT_REMOVED",
+                message=f"Segment collapsed to a point at {seg.start} after snapping; removed",
+                handle=handles[orig_idx],
+            ))
+            continue
+        snapped_with_indices.append((orig_idx, seg))
     snapped_segments = [seg for _, seg in snapped_with_indices]
 
     adjacency: dict[Point, list[tuple[int, str]]] = {}

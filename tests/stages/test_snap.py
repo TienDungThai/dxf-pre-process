@@ -56,6 +56,43 @@ def test_gap_beyond_max_reportable_gap_is_not_reported():
     assert not any(d.code == "OPEN_GAP" for d in diagnostics)
 
 
+def test_zero_length_segment_after_snapping_is_filtered_without_crashing():
+    # A segment whose two endpoints are within `tolerance` of each other
+    # collapses to a single point once snapped, and must be dropped rather
+    # than left in the output as a zero-length segment.
+    degenerate = _open_contour(
+        [Segment(kind="line", start=(5.0, 5.0), end=(5.03, 5.0))], handle="ZERO"
+    )
+    result, diagnostics = snap_and_chain([degenerate], tolerance=0.05, max_reportable_gap=2.0)
+    assert result == []
+    zero_len_diags = [d for d in diagnostics if d.code == "ZERO_LENGTH_SEGMENT_REMOVED"]
+    assert len(zero_len_diags) == 1
+    assert zero_len_diags[0].handle == "ZERO"
+
+
+def test_zero_length_segment_removal_does_not_shift_indices_of_later_segments():
+    # A degenerate segment sits first in processing order; the two segments
+    # after it should still chain together and keep the layer/handle of
+    # their own original contour, not one shifted by the removed index.
+    degenerate = _open_contour(
+        [Segment(kind="line", start=(5.0, 5.0), end=(5.03, 5.0))], layer="Z", handle="ZERO"
+    )
+    c1 = _open_contour([Segment(kind="line", start=(0.0, 0.0), end=(1.0, 0.0))], layer="L1", handle="A")
+    c2 = _open_contour([Segment(kind="line", start=(1.03, 0.0), end=(2.0, 0.0))], layer="L2", handle="B")
+
+    result, diagnostics = snap_and_chain([degenerate, c1, c2], tolerance=0.05, max_reportable_gap=2.0)
+
+    assert any(d.code == "ZERO_LENGTH_SEGMENT_REMOVED" and d.handle == "ZERO" for d in diagnostics)
+    assert len(result) == 1
+    chained = result[0]
+    chained.assert_contiguous()  # no ValueError
+    assert len(chained.segments) == 2
+    # Must match the original c1 contour (the first segment in the chain),
+    # not the degenerate contour or a shifted neighbor.
+    assert chained.source_layer == "L1"
+    assert chained.source_handle == "A"
+
+
 def test_t_junction_reports_ambiguous_and_still_chains_two_of_three():
     # three lines meeting at the origin: this is a branch, not a simple chain.
     a = Segment(kind="line", start=(-1.0, 0.0), end=(0.0, 0.0))

@@ -38,6 +38,10 @@ _INFO_CODES = {
     "OVERLAPPING_SEGMENTS_MERGED",
     "COMMON_EDGE",
     "CONTOURS_WELDED",
+    # A segment collapsed to a point after endpoint snapping (common with
+    # raster-traced, sub-pixel input) and was dropped before it could crash
+    # downstream length-based math -- normal, expected cleanup.
+    "ZERO_LENGTH_SEGMENT_REMOVED",
 }
 
 
