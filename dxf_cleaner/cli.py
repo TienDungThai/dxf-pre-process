@@ -77,10 +77,12 @@ def _apply_overrides(config: Config, snap_tol: float | None, weld_mode: str | No
 @click.option("--invert", is_flag=True, default=False, help="Invert black/white (raster input only).")
 @click.option("--raster-threshold", type=int, default=None,
               help="Override raster.threshold, 0-255 (raster input only).")
+@click.option("-t", "--thickness", type=float, default=None,
+              help="Override validate.material_thickness (sheet metal thickness, mm).")
 def main(input_path: Path, output_path: Path | None, config_path: Path | None, check: bool,
          snap_tol: float | None, weld_mode: str | None, no_simplify: bool,
          width_mm: float | None, height_mm: float | None, px_per_mm: float | None,
-         invert: bool, raster_threshold: int | None) -> None:
+         invert: bool, raster_threshold: int | None, thickness: float | None) -> None:
     """Clean a DXF file, or a PNG/JPG raster image, (or a directory of either) for laser cutting."""
     if width_mm is not None and height_mm is not None:
         raise click.UsageError("--width-mm and --height-mm are mutually exclusive")
@@ -96,6 +98,11 @@ def main(input_path: Path, output_path: Path | None, config_path: Path | None, c
     if raster_threshold is not None:
         raster_data["threshold"] = raster_threshold
     config = config.model_copy(update={"raster": type(config.raster)(**raster_data)})
+
+    if thickness is not None:
+        validate_data = config.validate.model_dump()
+        validate_data["material_thickness"] = thickness
+        config = config.model_copy(update={"validate": type(config.validate)(**validate_data)})
 
     try:
         if input_path.is_dir():

@@ -234,3 +234,31 @@ def test_missing_min_feature_width_is_skipped():
     report = validate([part], [], config, stats)
 
     assert report.level == "ok"
+
+
+def test_multiple_parts_from_raster_input_warns_about_micro_joint():
+    parts = [Part(exterior=_square_contour(0, 0, 10, "A")), Part(exterior=_square_contour(50, 0, 10, "B"))]
+    stats = dict(BASE_STATS, n_parts=2)
+
+    report = validate(parts, [], ValidateConfig(), stats)
+
+    assert report.level == "warning"
+    assert any("micro joint" in w.lower() or "n_parts" in w.lower() or "2" in w for w in report.warnings)
+
+
+def test_single_part_does_not_warn_about_micro_joint():
+    part = Part(exterior=_square_contour(0, 0, 10, "A"))
+    stats = dict(BASE_STATS, n_parts=1)
+
+    report = validate([part], [], ValidateConfig(), stats)
+
+    assert report.level == "ok"
+
+
+def test_missing_n_parts_is_skipped():
+    part = Part(exterior=_square_contour(0, 0, 10, "A"))
+    stats = dict(BASE_STATS)  # no "n_parts" key -- DXF input case
+
+    report = validate([part], [], ValidateConfig(), stats)
+
+    assert report.level == "ok"

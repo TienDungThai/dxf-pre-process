@@ -129,6 +129,13 @@ def validate(
                 f"material thickness ({2 * thickness:.2f}mm) -- risk of warping/burn"
             )
 
+    n_parts = stats.get("n_parts")
+    if n_parts is not None and n_parts > 1:
+        warnings.append(
+            f"{n_parts} separate parts detected -- consider placing a micro joint per "
+            f"part in CypCut before cutting"
+        )
+
     part_polygons = [Polygon(part.exterior.to_shapely()) for part in parts]
     for i, part_a in enumerate(parts):
         poly_a = part_polygons[i]
