@@ -1,3 +1,4 @@
+import csv
 from pathlib import Path
 
 import click
@@ -15,9 +16,14 @@ def _process_one(
     check: bool,
     width_mm: float | None = None,
     height_mm: float | None = None,
+    batch_rows: list[dict] | None = None,
 ) -> int:
     """Run the pipeline on one file, print a summary, and return its exit code
-    (0 ok, 1 warning, 2 critical) -- 3 (system error) is handled by the caller."""
+    (0 ok, 1 warning, 2 critical) -- 3 (system error) is handled by the caller.
+
+    When `batch_rows` is given (directory mode), a row is appended to it so
+    the caller can write a consolidated BAO-CAO.csv after processing every
+    file in the directory."""
     is_raster = input_path.suffix.lower() in _RASTER_SUFFIXES
     preview_path = str(input_path.with_name(f"{input_path.stem}_KIEMTRA.png")) if is_raster else None
 
@@ -34,6 +40,9 @@ def _process_one(
     for key, value in sorted(report.info.items()):
         click.echo(f"  {key}: {value}")
 
+    if batch_rows is not None:
+        batch_rows.append({"file": input_path.name, "status": report.level, **report.info})
+
     if not check and report.level != "critical":
         target = output_path if output_path is not None else input_path.with_name(
             f"{input_path.stem}.clean.dxf"
@@ -42,6 +51,27 @@ def _process_one(
         click.echo(f"  -> wrote {target}")
 
     return {"ok": 0, "warning": 1, "critical": 2}[report.level]
+
+
+def _write_batch_report(batch_rows: list[dict], out_dir: Path) -> Path:
+    """Write a consolidated BAO-CAO.csv covering every file processed in
+    directory mode. Columns are the dynamic union of every row's keys (DXF
+    and PNG rows carry different info keys), so a mixed-input batch still
+    opens as one consistent spreadsheet -- missing columns are blank."""
+    fieldnames = ["file", "status"]
+    seen = set(fieldnames)
+    for row in batch_rows:
+        for key in row:
+            if key not in seen:
+                fieldnames.append(key)
+                seen.add(key)
+
+    report_path = out_dir / "BAO-CAO.csv"
+    with open(report_path, "w", newline="", encoding="utf-8-sig") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames, restval="")
+        writer.writeheader()
+        writer.writerows(batch_rows)
+    return report_path
 
 
 def _apply_overrides(config: Config, snap_tol: float | None, weld_mode: str | None, no_simplify: bool) -> Config:
@@ -116,9 +146,13 @@ def main(input_path: Path, output_path: Path | None, config_path: Path | None, c
                 click.echo(f"No .dxf files found in {input_path}")
                 raise SystemExit(0)
             worst = 0
+            batch_rows: list[dict] = []
             for f in dxf_files:
                 target = (output_path / f"{f.stem}.clean.dxf") if output_path is not None else None
-                worst = max(worst, _process_one(f, target, config, check, width_mm, height_mm))
+                worst = max(worst, _process_one(f, target, config, check, width_mm, height_mm, batch_rows))
+            report_dir = output_path if output_path is not None else input_path
+            report_path = _write_batch_report(batch_rows, report_dir)
+            click.echo(f"Batch report: {report_path}")
             raise SystemExit(worst)
         else:
             code = _process_one(input_path, output_path, config, check, width_mm, height_mm)

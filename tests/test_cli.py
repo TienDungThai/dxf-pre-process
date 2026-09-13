@@ -198,3 +198,59 @@ def test_thickness_flag_short_and_long_form_both_work(tmp_path):
 
     assert result_short.exit_code == 0
     assert result_long.exit_code == 0
+
+
+def test_directory_mode_writes_batch_report_csv(tmp_path):
+    import csv
+
+    input_dir = tmp_path / "in"
+    input_dir.mkdir()
+    output_dir = tmp_path / "out"
+    for name in ("a", "b"):
+        _clean_square_doc().saveas(input_dir / f"{name}.dxf")
+    _square_with_hole_png(input_dir, name="c.png")
+
+    result = CliRunner().invoke(main, [str(input_dir), "-o", str(output_dir), "-w", "160"])
+
+    assert result.exit_code in (0, 1)
+    report_path = output_dir / "BAO-CAO.csv"
+    assert report_path.exists()
+
+    with open(report_path, newline="", encoding="utf-8-sig") as f:
+        rows = {row["file"]: row for row in csv.DictReader(f)}
+
+    assert set(rows.keys()) == {"a.dxf", "b.dxf", "c.png"}
+    assert rows["a.dxf"]["status"] == "ok"
+    # DXF rows have no raster-only columns populated, but the columns must
+    # still exist (dynamic union of every row's info keys) so a spreadsheet
+    # opens with one consistent header across mixed DXF/PNG batches.
+    assert "min_feature_width_mm" in rows["a.dxf"]
+    assert rows["a.dxf"]["min_feature_width_mm"] == ""
+    assert rows["c.png"]["min_feature_width_mm"] != ""
+    assert rows["c.png"]["n_parts"] != ""
+
+
+def test_directory_mode_without_output_writes_report_next_to_input(tmp_path):
+    import csv
+
+    for name in ("a", "b"):
+        _clean_square_doc().saveas(tmp_path / f"{name}.dxf")
+
+    result = CliRunner().invoke(main, [str(tmp_path)])
+
+    assert result.exit_code == 0
+    report_path = tmp_path / "BAO-CAO.csv"
+    assert report_path.exists()
+    with open(report_path, newline="", encoding="utf-8-sig") as f:
+        rows = list(csv.DictReader(f))
+    assert len(rows) == 2
+
+
+def test_single_file_mode_does_not_write_batch_report(tmp_path):
+    doc = _clean_square_doc()
+    input_path = tmp_path / "square.dxf"
+    doc.saveas(input_path)
+
+    CliRunner().invoke(main, [str(input_path), "-o", str(tmp_path / "out.dxf")])
+
+    assert not (tmp_path / "BAO-CAO.csv").exists()
