@@ -32,8 +32,7 @@ def snap_and_chain(
             layers.append(contour.source_layer)
             handles.append(contour.source_handle)
 
-    n = len(segments)
-    if n == 0:
+    if len(segments) == 0:
         return [], diagnostics
 
     endpoint_coords: list[Point] = []

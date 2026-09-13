@@ -61,7 +61,9 @@ def _apply_overrides(config: Config, snap_tol: float | None, weld_mode: str | No
               help="Output file (single-file mode) or output directory (directory mode).")
 @click.option("--config", "config_path", type=click.Path(exists=True, path_type=Path), default=None,
               help="Path to a config.yaml overriding defaults.")
-@click.option("--check", is_flag=True, default=False, help="Only report; never write an output file.")
+@click.option("--check", is_flag=True, default=False,
+              help="Only report; never write an output file. Note: for raster input, the "
+                   "<stem>_KIEMTRA.png preview image is still written even in check mode.")
 @click.option("--snap-tol", type=float, default=None, help="Override snap.tolerance.")
 @click.option("--weld-mode", type=click.Choice(["off", "overlapping", "all"]), default=None,
               help="Override weld.mode.")

@@ -27,6 +27,17 @@ _WARNING_CODES = {
     # hole/island fully contained inside another contour -- the containment
     # is silently absorbed by unary_union, so the operator should know.
     "HOLES_LOST_IN_WELD_ALL",
+    # Raster-input diagnostics: computed numbers worth surfacing (actual DPI,
+    # fill/border ratios) rather than silently dropped.
+    "RASTER_LOW_DPI",
+    "RASTER_POSSIBLE_INVERTED",
+}
+# Warning codes whose Diagnostic.message already contains the useful,
+# computed detail (e.g. the actual DPI value) -- surface that message
+# directly instead of the generic "see diagnostics for details" text.
+_WARNING_CODES_WITH_OWN_MESSAGE = {
+    "RASTER_LOW_DPI",
+    "RASTER_POSSIBLE_INVERTED",
 }
 # Codes that are normal, expected cleanup actions. They are deliberately NOT
 # escalated to warnings; they are counted into the report's info block so they
@@ -58,13 +69,14 @@ def _hole_diameter(part_hole_poly: Polygon) -> float:
 
 
 def validate(
-    parts: list[Part], diagnostics: list[Diagnostic], config: ValidateConfig, stats: dict[str, int]
+    parts: list[Part], diagnostics: list[Diagnostic], config: ValidateConfig, stats: dict[str, int | float]
 ) -> ValidationReport:
     critical: list[str] = []
     warnings: list[str] = []
 
     diag_codes = [d.code for d in diagnostics]
-    for code in diag_codes:
+    for diag in diagnostics:
+        code = diag.code
         if code in _CRITICAL_CODES:
             critical.append(f"{code}: see diagnostics for details")
         elif code in _DROPPED_ENTITY_CODES:
@@ -73,6 +85,8 @@ def validate(
             warnings.append("Input file did not specify units; assumed unit was used")
         elif code == "AMBIGUOUS_JUNCTION":
             warnings.append("Ambiguous junction encountered while reconnecting contours")
+        elif code in _WARNING_CODES_WITH_OWN_MESSAGE:
+            warnings.append(f"{code}: {diag.message}")
         elif code in _WARNING_CODES:
             warnings.append(f"{code}: see diagnostics for details")
 

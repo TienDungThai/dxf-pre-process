@@ -146,7 +146,7 @@ def test_read_raster_produces_closed_line_contours_with_stats(tmp_path):
     result = read_raster(str(path), Config(), width_mm=160.0)
 
     assert result.unit_scale == 1.0
-    assert result.flattened_handles == set()
+    assert result.flattened_handles == {c.source_handle for c in result.contours}
     assert len(result.contours) == 2
     for contour in result.contours:
         assert contour.is_closed
@@ -199,6 +199,26 @@ def test_read_raster_writes_preview_when_path_given(tmp_path):
     read_raster(str(path), Config(), width_mm=160.0, preview_path=str(preview_path))
 
     assert preview_path.exists()
+
+
+def test_read_raster_raises_clear_error_on_degenerate_zero_width_trace(tmp_path, monkeypatch):
+    # Regression for: a traced ring degenerating to zero width/height (e.g. a
+    # single point or a perfectly horizontal/vertical line) made span_w_px (or
+    # span_h_px) 0, causing an unhandled ZeroDivisionError deep in the
+    # width_mm / span_w_px division instead of a clear, actionable error.
+    from dxf_cleaner.config import Config
+    from dxf_cleaner import raster as raster_module
+
+    img = _square_with_hole_image()
+    path = _save_png(tmp_path, "square.png", img)
+
+    # Force trace_mask to return a degenerate ring with zero width (all
+    # points share the same x coordinate).
+    degenerate_ring = np.array([[5.0, 0.0], [5.0, 1.0], [5.0, 2.0], [5.0, 0.0]])
+    monkeypatch.setattr(raster_module, "trace_mask", lambda mask, min_area_px, smooth_sigma: [degenerate_ring])
+
+    with pytest.raises(ValueError, match="zero width/height"):
+        raster_module.read_raster(str(path), Config(), width_mm=160.0)
 
 
 def test_read_raster_and_hierarchy_together_yield_one_part_one_hole(tmp_path):

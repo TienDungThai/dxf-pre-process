@@ -210,6 +210,22 @@ def test_min_feature_width_above_double_thickness_is_ok():
     assert report.level == "ok"
 
 
+def test_raster_low_dpi_diagnostic_is_a_warning():
+    part = Part(exterior=_square_contour(0, 0, 100, "A"))
+    diags = [Diagnostic(code="RASTER_LOW_DPI", message="Effective resolution 150 DPI is below 300")]
+    report = validate([part], diags, ValidateConfig(), BASE_STATS)
+    assert report.level == "warning"
+    assert any("RASTER_LOW_DPI" in w for w in report.warnings)
+
+
+def test_raster_possible_inverted_diagnostic_is_a_warning():
+    part = Part(exterior=_square_contour(0, 0, 100, "A"))
+    diags = [Diagnostic(code="RASTER_POSSIBLE_INVERTED", message="Kept-pixel fill ratio 0.90 looks inverted")]
+    report = validate([part], diags, ValidateConfig(), BASE_STATS)
+    assert report.level == "warning"
+    assert any("RASTER_POSSIBLE_INVERTED" in w for w in report.warnings)
+
+
 def test_missing_min_feature_width_is_skipped():
     part = Part(exterior=_square_contour(0, 0, 100, "A"))
     stats = dict(BASE_STATS)  # no "min_feature_width_mm" key -- DXF input case

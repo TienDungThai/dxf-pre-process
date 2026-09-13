@@ -157,7 +157,7 @@ def read_raster(
         return ReadResult(contours=[], diagnostics=diagnostics, unit_scale=1.0,
                            flattened_handles=set(),
                            raster_stats={"width_mm": 0.0, "height_mm": 0.0, "dpi": 0.0,
-                                          "min_feature_width_mm": 0.0, "n_parts": 0,
+                                          "n_parts": 0,
                                           "threshold": threshold_used, "mm_per_px": 0.0})
 
     xs = np.concatenate([r[:, 0] for r in rings_px])
@@ -167,8 +167,16 @@ def read_raster(
     span_w_px, span_h_px = x1 - x0, y1 - y0
 
     if width_mm is not None:
+        if span_w_px == 0:
+            raise ValueError(
+                "Traced image has zero width/height -- check min_area_px and the input image"
+            )
         mm_per_px = width_mm / span_w_px
     elif height_mm is not None:
+        if span_h_px == 0:
+            raise ValueError(
+                "Traced image has zero width/height -- check min_area_px and the input image"
+            )
         mm_per_px = height_mm / span_h_px
     elif raster_config.pixels_per_mm is not None:
         mm_per_px = 1.0 / raster_config.pixels_per_mm
@@ -177,7 +185,7 @@ def read_raster(
             "read_raster needs one of: width_mm, height_mm, or config.raster.pixels_per_mm"
         )
 
-    dpi = span_w_px / (span_w_px * mm_per_px / 25.4)
+    dpi = 25.4 / mm_per_px
     if dpi < 300:
         diagnostics.append(Diagnostic(
             code="RASTER_LOW_DPI",
@@ -217,5 +225,6 @@ def read_raster(
         "mm_per_px": mm_per_px,
     }
 
+    flattened_handles = {contour.source_handle for contour in contours}
     return ReadResult(contours=contours, diagnostics=diagnostics, unit_scale=1.0,
-                       flattened_handles=set(), raster_stats=raster_stats)
+                       flattened_handles=flattened_handles, raster_stats=raster_stats)

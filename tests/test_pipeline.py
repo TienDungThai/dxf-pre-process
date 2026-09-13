@@ -258,6 +258,32 @@ def test_run_pipeline_on_png_input_produces_one_part_with_hole(tmp_path):
     assert "min_feature_width_mm" in result.report.info
 
 
+def test_run_pipeline_on_png_input_simplifies_traced_contours(tmp_path):
+    # Regression for: raster contours were never simplified because
+    # read_raster returned flattened_handles=set(), so simplify_contours
+    # (which only touches contours whose source_handle is in
+    # touched_handles = flattened_handles | welded_handles) skipped every
+    # raster contour regardless of config.simplify.tolerance. A traced
+    # circle has hundreds of marching-squares vertices, so simplification
+    # must visibly reduce the node count.
+    import numpy as np
+    from PIL import Image
+    from dxf_cleaner.pipeline import run_pipeline
+    from dxf_cleaner.config import Config
+
+    size = 300
+    img = np.full((size, size, 3), 255, dtype=np.uint8)
+    yy, xx = np.mgrid[0:size, 0:size]
+    circle = (xx - size // 2) ** 2 + (yy - size // 2) ** 2 <= 130 ** 2
+    img[circle] = 0
+    path = tmp_path / "circle.png"
+    Image.fromarray(img, mode="RGB").save(path)
+
+    result = run_pipeline(str(path), Config(), width_mm=160.0)
+
+    assert result.report.info["node_count_after"] < result.report.info["node_count_before"]
+
+
 def test_run_pipeline_on_dxf_input_still_works_without_new_kwargs(tmp_path):
     import ezdxf
     from dxf_cleaner.pipeline import run_pipeline

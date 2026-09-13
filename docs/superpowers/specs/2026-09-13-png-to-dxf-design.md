@@ -82,9 +82,18 @@ on file extension without changing anything downstream:
    happens in `validate()` (3.4), keeping severity policy in one place.
 
 Return `ReadResult(contours=<flat list from step 5>, diagnostics=<2,6>,
-unit_scale=1.0, flattened_handles=set())`. `unit_scale=1.0` because
-coordinates are already in mm after step 4 — `run_pipeline` must not
-rescale raster output.
+unit_scale=1.0, flattened_handles=<every raster contour's source_handle>)`.
+`unit_scale=1.0` because coordinates are already in mm after step 4 —
+`run_pipeline` must not rescale raster output. `flattened_handles` must
+contain every raster contour's handle (not the empty set): raster contours
+are discretized/flattened approximations of an underlying shape, exactly
+like the SPLINE/ELLIPSE contours that already populate `flattened_handles`
+for DXF input, and `simplify_contours` (3.2's downstream consumer, wired in
+`run_pipeline`) only simplifies a contour whose `source_handle` is in
+`touched_handles = flattened_handles | welded_handles` — leaving
+`flattened_handles` empty for raster input would mean simplify never runs
+on any raster contour, defeating the point of node-reducing sub-pixel
+traced geometry.
 
 **Why a flat contour list, deliberately dropping `png2dxf.py`'s own
 hole/exterior depth computation:** `dxf_cleaner.stages.hierarchy.build_hierarchy`
@@ -168,9 +177,10 @@ pipeline stage and stays as a direct CLI-level call.
 
 Existing `report.info` (already an arbitrary `dict[str, int|float]`,
 already auto-printed by `cli.py`) gets the raster-specific keys added
-into `stats` in `read_raster`/`run_pipeline`: `size_mm` (as
-`width_mm`/`height_mm`), `dpi`, `min_width_mm`, `n_parts` — no changes
-needed to the printing code in `cli.py`, it already iterates `report.info`.
+into `stats` in `read_raster`/`run_pipeline`: `width_mm`, `height_mm`,
+`dpi`, `min_feature_width_mm`, `n_parts`, `threshold`, `mm_per_px` — no
+changes needed to the printing code in `cli.py`, it already iterates
+`report.info`.
 
 ### 3.7 Dependencies (`pyproject.toml`)
 
