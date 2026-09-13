@@ -76,3 +76,34 @@ def measure_min_width_px(mask: np.ndarray, prune_iterations: int) -> tuple[float
     n_parts = cv2.connectedComponents(mask)[0] - 1
     min_width_px = float(widths.min()) if widths.size else 0.0
     return min_width_px, n_parts, dist, skel
+
+
+def render_preview(
+    mask: np.ndarray,
+    rings: list[np.ndarray],
+    holes_by_ring: list[bool],
+    dist: np.ndarray,
+    skel: np.ndarray,
+    thin_threshold_px: float,
+    out_path: str,
+) -> None:
+    """Write the shop's required pre-cut check image: gray = kept material,
+    white = background, green outline = outer boundary, blue outline = hole,
+    red = feature thinner than `thin_threshold_px`."""
+    preview = np.full((mask.shape[0], mask.shape[1], 3), 255, np.uint8)
+    preview[mask > 0] = (205, 205, 205)
+
+    thin_overlay = np.zeros(mask.shape, np.uint8)
+    ys, xs = np.nonzero(skel)
+    for y, x in zip(ys, xs):
+        radius = dist[y, x]
+        if radius < thin_threshold_px / 2.0:
+            cv2.circle(thin_overlay, (int(x), int(y)), max(1, int(radius)), 255, -1)
+    thin_overlay = cv2.bitwise_and(thin_overlay, mask)
+    preview[thin_overlay > 0] = (60, 60, 230)  # BGR-ish order kept for cv2.imwrite below
+
+    for ring, is_hole in zip(rings, holes_by_ring):
+        color = (200, 120, 0) if is_hole else (0, 140, 0)
+        cv2.polylines(preview, [ring.astype(np.int32)], True, color, 1)
+
+    cv2.imwrite(out_path, preview)

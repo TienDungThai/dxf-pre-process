@@ -112,3 +112,25 @@ def test_measure_min_width_counts_disconnected_parts(tmp_path):
     _, n_parts, _, _ = measure_min_width_px(mask, prune_iterations=3)
 
     assert n_parts == 2
+
+
+def test_render_preview_writes_valid_png_matching_mask_size(tmp_path):
+    from dxf_cleaner.raster import (
+        load_binary, trace_mask, measure_min_width_px, render_preview,
+    )
+
+    img = _square_with_hole_image()
+    path = _save_png(tmp_path, "square.png", img)
+    mask, _, _ = load_binary(path, threshold=None, invert=False)
+    rings = trace_mask(mask, min_area_px=20.0, smooth_sigma=0.0)
+    _, _, dist, skel = measure_min_width_px(mask, prune_iterations=3)
+
+    out_path = tmp_path / "square_KIEMTRA.png"
+    render_preview(
+        mask, rings, holes_by_ring=[False, True],
+        dist=dist, skel=skel, thin_threshold_px=5.0, out_path=str(out_path),
+    )
+
+    assert out_path.exists()
+    preview = Image.open(out_path)
+    assert preview.size == (mask.shape[1], mask.shape[0])
