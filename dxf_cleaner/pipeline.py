@@ -4,7 +4,7 @@ from pathlib import Path
 from dxf_cleaner.config import Config
 from dxf_cleaner.model import Part, Contour, Diagnostic
 from dxf_cleaner.reader import read_dxf
-from dxf_cleaner.raster import read_raster
+from dxf_cleaner.raster import read_raster, render_preview
 from dxf_cleaner.writer import write_dxf
 from dxf_cleaner.stages.snap import snap_and_chain
 from dxf_cleaner.stages.dedupe import dedupe_contours
@@ -33,6 +33,33 @@ def parts_to_contours(parts: list[Part]) -> list[Contour]:
 _RASTER_SUFFIXES = {".png", ".jpg", ".jpeg"}
 
 
+def _render_raster_preview(parts: list[Part], preview_data: dict, preview_path: str) -> None:
+    """Render the _KIEMTRA.png preview AFTER build_hierarchy has classified
+    exterior vs. hole, so each ring is drawn in its correct color -- unlike
+    read_raster (which runs before hierarchy classification exists), this
+    knows exactly which contours are holes.
+
+    A contour dropped between read_raster and here (by despeckle, or merged
+    away by weld into a new handle) simply has no entry in
+    rings_px_by_handle and is silently skipped -- it no longer exists in the
+    cleaned output, so it has nothing to preview."""
+    rings_px_by_handle = preview_data["rings_px_by_handle"]
+    ordered_rings = []
+    holes_by_ring = []
+    for part in parts:
+        for contour, is_hole in [(part.exterior, False)] + [(hole, True) for hole in part.interiors]:
+            ring_px = rings_px_by_handle.get(contour.source_handle)
+            if ring_px is not None:
+                ordered_rings.append(ring_px)
+                holes_by_ring.append(is_hole)
+
+    render_preview(
+        preview_data["mask"], ordered_rings, holes_by_ring,
+        preview_data["dist"], preview_data["skel"], preview_data["thin_threshold_px"],
+        preview_path,
+    )
+
+
 def run_pipeline(
     input_path: str,
     config: Config,
@@ -42,9 +69,7 @@ def run_pipeline(
     preview_path: str | None = None,
 ) -> PipelineResult:
     if Path(input_path).suffix.lower() in _RASTER_SUFFIXES:
-        read_result = read_raster(
-            input_path, config, width_mm=width_mm, height_mm=height_mm, preview_path=preview_path
-        )
+        read_result = read_raster(input_path, config, width_mm=width_mm, height_mm=height_mm)
     else:
         read_result = read_dxf(input_path, config)
     diagnostics: list[Diagnostic] = list(read_result.diagnostics)
@@ -77,6 +102,9 @@ def run_pipeline(
 
     parts, hierarchy_diags = build_hierarchy(contours)
     diagnostics.extend(hierarchy_diags)
+
+    if read_result.raster_preview_data is not None and preview_path is not None:
+        _render_raster_preview(parts, read_result.raster_preview_data, preview_path)
 
     if config.simplify.enabled:
         touched_handles = read_result.flattened_handles | welded_handles

@@ -284,6 +284,42 @@ def test_run_pipeline_on_png_input_simplifies_traced_contours(tmp_path):
     assert result.report.info["node_count_after"] < result.report.info["node_count_before"]
 
 
+def test_run_pipeline_writes_preview_with_correct_hole_and_exterior_colors(tmp_path):
+    # Roadmap item 2: preview rendering moved from read_raster to
+    # run_pipeline (after build_hierarchy) specifically so the hole ring gets
+    # drawn in its own color instead of every ring drawn as "exterior".
+    import numpy as np
+    from PIL import Image
+    from dxf_cleaner.pipeline import run_pipeline
+    from dxf_cleaner.config import Config
+
+    size = 200
+    img = np.full((size, size, 3), 255, dtype=np.uint8)
+    img[20:180, 20:180] = 0
+    yy, xx = np.mgrid[0:size, 0:size]
+    hole = (xx - 100) ** 2 + (yy - 100) ** 2 <= 30 ** 2
+    img[hole] = 255
+    path = tmp_path / "square.png"
+    Image.fromarray(img, mode="RGB").save(path)
+    preview_path = tmp_path / "square_KIEMTRA.png"
+
+    run_pipeline(str(path), Config(), width_mm=160.0, preview_path=str(preview_path))
+
+    assert preview_path.exists()
+    preview = np.array(Image.open(preview_path).convert("RGB"))
+
+    def _color_present_near(color, row, col, radius=4):
+        window = preview[row - radius:row + radius + 1, col - radius:col + radius + 1]
+        return np.any(np.all(window == color, axis=-1))
+
+    # render_preview's own contract: exterior boundary -> RGB (0, 140, 0)
+    # (green), hole boundary -> RGB (0, 120, 200) (blue). The outer square
+    # edge sits near row=20 (img[20:180, ...] = 0); the hole (radius 30,
+    # centered at (100, 100)) has its top edge near row=70.
+    assert _color_present_near((0, 140, 0), row=20, col=100), "exterior boundary not drawn in green"
+    assert _color_present_near((0, 120, 200), row=70, col=100), "hole boundary not drawn in blue"
+
+
 def test_run_pipeline_on_dxf_input_still_works_without_new_kwargs(tmp_path):
     import ezdxf
     from dxf_cleaner.pipeline import run_pipeline

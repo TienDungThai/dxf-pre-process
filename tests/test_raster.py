@@ -188,17 +188,28 @@ def test_read_raster_flags_possible_inversion(tmp_path):
     assert "RASTER_POSSIBLE_INVERTED" in codes
 
 
-def test_read_raster_writes_preview_when_path_given(tmp_path):
+def test_read_raster_returns_preview_data_instead_of_writing_the_file(tmp_path):
+    # Preview rendering moved out of read_raster (Roadmap item 2): the real
+    # exterior/hole classification only exists after build_hierarchy runs, so
+    # read_raster hands back the raw ingredients (mask/dist/skel/rings) keyed
+    # by source_handle, and the caller (run_pipeline) renders the preview
+    # after classifying holes correctly.
     from dxf_cleaner.config import Config
     from dxf_cleaner.raster import read_raster
 
     img = _square_with_hole_image()
     path = _save_png(tmp_path, "square.png", img)
-    preview_path = tmp_path / "square_KIEMTRA.png"
 
-    read_raster(str(path), Config(), width_mm=160.0, preview_path=str(preview_path))
+    result = read_raster(str(path), Config(), width_mm=160.0)
 
-    assert preview_path.exists()
+    assert result.raster_preview_data is not None
+    preview_data = result.raster_preview_data
+    assert preview_data["mask"].ndim == 2
+    assert preview_data["dist"].shape == preview_data["mask"].shape
+    assert preview_data["skel"].shape == preview_data["mask"].shape
+    assert preview_data["thin_threshold_px"] > 0
+    rings_by_handle = preview_data["rings_px_by_handle"]
+    assert set(rings_by_handle.keys()) == {c.source_handle for c in result.contours}
 
 
 def test_read_raster_raises_clear_error_on_degenerate_zero_width_trace(tmp_path, monkeypatch):

@@ -131,7 +131,6 @@ def read_raster(
     *,
     width_mm: float | None = None,
     height_mm: float | None = None,
-    preview_path: str | None = None,
 ) -> ReadResult:
     raster_config = config.raster
     mask, threshold_used, (width_px, height_px) = load_binary(
@@ -205,15 +204,22 @@ def read_raster(
     min_width_px, n_parts, dist, skel = measure_min_width_px(mask, prune_iterations)
     min_feature_width_mm = min_width_px * mm_per_px
 
-    if preview_path is not None:
-        holes_by_ring = [False] * len(rings_px)  # exterior/hole not yet known here;
-        # hierarchy classification happens downstream in build_hierarchy, so the
-        # preview draws every ring the same color pending that. See Task 9 note.
-        render_preview(
-            mask, rings_px, holes_by_ring, dist, skel,
-            thin_threshold_px=2 * config.validate.material_thickness / mm_per_px,
-            out_path=preview_path,
-        )
+    # Preview rendering itself does NOT happen here: exterior/hole
+    # classification only exists after build_hierarchy runs downstream, so
+    # drawing it now would mean every ring gets the same "exterior" color.
+    # Instead, hand back everything the preview needs (raw mask/dist/skel
+    # plus each ring keyed by the same source_handle the resulting Contour
+    # carries) so run_pipeline can render it correctly once parts/holes are
+    # known (see pipeline.py).
+    raster_preview_data = {
+        "mask": mask,
+        "dist": dist,
+        "skel": skel,
+        "thin_threshold_px": 2 * config.validate.material_thickness / mm_per_px,
+        "rings_px_by_handle": {
+            contour.source_handle: ring_px for contour, ring_px in zip(contours, rings_px)
+        },
+    }
 
     raster_stats = {
         "width_mm": span_w_px * mm_per_px,
@@ -227,4 +233,5 @@ def read_raster(
 
     flattened_handles = {contour.source_handle for contour in contours}
     return ReadResult(contours=contours, diagnostics=diagnostics, unit_scale=1.0,
-                       flattened_handles=flattened_handles, raster_stats=raster_stats)
+                       flattened_handles=flattened_handles, raster_stats=raster_stats,
+                       raster_preview_data=raster_preview_data)
