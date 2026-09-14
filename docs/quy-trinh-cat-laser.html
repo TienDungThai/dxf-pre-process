@@ -1,0 +1,428 @@
+<title>Trạm Xử Lý File Cắt</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;700;900&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root{
+    --paper:#EAEAE1;
+    --paper-raised:#F5F4EE;
+    --ink:#1C1B17;
+    --ink-soft:#4B4A42;
+    --steel:#8B8D7E;
+    --hairline:#C9C9BC;
+    --cut:#C22A2A;
+    --cut-soft:#C22A2A1a;
+    --engrave:#25628F;
+    --engrave-soft:#25628F1a;
+    --ok:#3F7D4A;
+    --warn:#B5791C;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --paper:#1B1B18;
+      --paper-raised:#242320;
+      --ink:#EDEBE2;
+      --ink-soft:#B7B5A9;
+      --steel:#8B8D7E;
+      --hairline:#3A3A33;
+      --cut:#E2543F;
+      --cut-soft:#E2543F26;
+      --engrave:#5C9FCE;
+      --engrave-soft:#5C9FCE26;
+      --ok:#7BBF83;
+      --warn:#E0A94C;
+    }
+  }
+  :root[data-theme="dark"]{
+    --paper:#1B1B18;
+    --paper-raised:#242320;
+    --ink:#EDEBE2;
+    --ink-soft:#B7B5A9;
+    --steel:#8B8D7E;
+    --hairline:#3A3A33;
+    --cut:#E2543F;
+    --cut-soft:#E2543F26;
+    --engrave:#5C9FCE;
+    --engrave-soft:#5C9FCE26;
+    --ok:#7BBF83;
+    --warn:#E0A94C;
+  }
+
+  *{box-sizing:border-box;}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:'IBM Plex Sans', system-ui, sans-serif;
+    line-height:1.55;
+  }
+  h1,h2,h3{text-wrap:balance; font-family:'Big Shoulders Display', 'Arial Narrow', sans-serif; text-transform:uppercase; letter-spacing:.01em; margin:0;}
+  .mono{font-family:'IBM Plex Mono', ui-monospace, monospace;}
+  .wrap{max-width:920px; margin:0 auto; padding:56px 24px 96px;}
+
+  /* ---------- Header: job ticket ---------- */
+  .ticket{
+    border:1px solid var(--hairline);
+    background:var(--paper-raised);
+    border-radius:2px;
+    padding:28px 28px 22px;
+    position:relative;
+    overflow:hidden;
+  }
+  .ticket::before{
+    content:"";
+    position:absolute; inset:0;
+    background:
+      repeating-linear-gradient(90deg, transparent 0 39px, var(--hairline) 39px 40px);
+    opacity:.35;
+    pointer-events:none;
+  }
+  .ticket-eyebrow{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:12px; letter-spacing:.14em; text-transform:uppercase;
+    color:var(--cut); font-weight:500;
+    display:flex; gap:10px; align-items:center;
+  }
+  .ticket-eyebrow .dash{flex:0 0 22px; height:1px; background:var(--cut);}
+  .ticket h1{font-size:clamp(34px,6vw,54px); font-weight:900; margin-top:10px; color:var(--ink);}
+  .ticket p.lede{
+    max-width:56ch; margin-top:14px; color:var(--ink-soft); font-size:16px;
+  }
+  .ticket-fields{
+    display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+    gap:14px; margin-top:24px; padding-top:20px; border-top:1px solid var(--hairline);
+  }
+  .field .k{font-family:'IBM Plex Mono',monospace; font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--steel);}
+  .field .v{font-size:15px; margin-top:3px; font-weight:500;}
+
+  /* ---------- Spine + stations ---------- */
+  .spine{position:relative; margin-top:56px;}
+  .spine-line{
+    position:absolute; left:27px; top:14px; bottom:14px; width:2px;
+    background:repeating-linear-gradient(var(--cut), var(--cut) 6px, transparent 6px, transparent 11px);
+  }
+  .station{
+    position:relative; padding-left:76px; margin-bottom:44px;
+  }
+  .station:last-child{margin-bottom:0;}
+  .station-num{
+    position:absolute; left:0; top:0;
+    width:56px; height:56px; border-radius:50%;
+    background:var(--paper-raised); border:2px solid var(--cut);
+    display:flex; align-items:center; justify-content:center;
+    font-family:'Big Shoulders Display'; font-weight:900; font-size:24px; color:var(--cut);
+    z-index:1;
+  }
+  .station-card{
+    border:1px solid var(--hairline); background:var(--paper-raised);
+    border-radius:2px; padding:22px 24px 24px;
+  }
+  .station-head{
+    display:flex; flex-wrap:wrap; gap:14px; align-items:baseline; justify-content:space-between;
+  }
+  .station-head h2{font-size:22px; font-weight:700; color:var(--ink);}
+  .station-tag{
+    font-family:'IBM Plex Mono',monospace; font-size:11px; letter-spacing:.06em;
+    color:var(--steel); text-transform:uppercase;
+  }
+  .station-body{
+    display:grid; grid-template-columns:150px 1fr; gap:22px; margin-top:16px; align-items:center;
+  }
+  @media (max-width:620px){ .station-body{grid-template-columns:1fr;} .station-icon{width:120px; margin:0 auto;} }
+  .station-icon{width:150px; height:120px;}
+  .station-icon svg{width:100%; height:100%; display:block;}
+  .station-desc p{margin:0 0 10px; font-size:15px; color:var(--ink);}
+  .station-desc p:last-child{margin-bottom:0;}
+  .station-desc .analogy{color:var(--ink-soft); font-size:14px;}
+
+  .flags{margin-top:16px; padding-top:14px; border-top:1px dashed var(--hairline); display:flex; flex-direction:column; gap:8px;}
+  .flag{display:flex; gap:10px; font-size:13.5px; color:var(--ink-soft); align-items:flex-start;}
+  .flag .dot{flex:0 0 8px; height:8px; width:8px; border-radius:50%; margin-top:5px;}
+  .flag.crit .dot{background:var(--cut);}
+  .flag.warn .dot{background:var(--warn);}
+  .flag.info .dot{background:var(--engrave);}
+  .flag b{color:var(--ink); font-weight:600;}
+
+  /* ---------- legend ---------- */
+  .legend{
+    display:flex; flex-wrap:wrap; gap:18px; margin-top:14px;
+    font-family:'IBM Plex Mono',monospace; font-size:11.5px; color:var(--ink-soft);
+  }
+  .legend span{display:inline-flex; align-items:center; gap:7px;}
+  .legend .sw{width:14px; height:14px; border-radius:50%;}
+
+  /* ---------- footer / outcome ---------- */
+  .outcome{
+    margin-top:56px; border:1px solid var(--hairline); background:var(--paper-raised);
+    border-radius:2px; padding:26px 26px;
+    display:grid; grid-template-columns:1fr auto; gap:24px; align-items:center;
+  }
+  @media (max-width:560px){.outcome{grid-template-columns:1fr;}}
+  .outcome h3{font-size:20px; font-weight:700;}
+  .outcome p{margin:8px 0 0; color:var(--ink-soft); font-size:14.5px; max-width:52ch;}
+  .stamp{
+    font-family:'IBM Plex Mono',monospace; font-size:12px; letter-spacing:.1em; text-transform:uppercase;
+    border:2px solid var(--ok); color:var(--ok); padding:10px 16px; border-radius:2px; white-space:nowrap;
+    transform:rotate(-2deg);
+  }
+
+  /* ---------- glossary ---------- */
+  .glossary{margin-top:56px;}
+  .glossary-head{display:flex; gap:14px; align-items:baseline;}
+  .glossary-head h2{font-size:26px;}
+  .glossary-head .station-tag{margin-left:auto;}
+  .glossary-lede{color:var(--ink-soft); font-size:14.5px; max-width:64ch; margin-top:8px;}
+  .glossary-list{
+    list-style:none; margin:22px 0 0; padding:0;
+    display:grid; grid-template-columns:repeat(auto-fill, minmax(260px,1fr));
+    gap:1px; background:var(--hairline);
+    border:1px solid var(--hairline);
+  }
+  .glossary-list li{
+    background:var(--paper-raised); padding:16px 18px;
+  }
+  .glossary-list dt{
+    font-family:'IBM Plex Mono',monospace; font-weight:500; font-size:13.5px;
+    color:var(--cut); text-transform:uppercase; letter-spacing:.03em;
+  }
+  .glossary-list dd{margin:6px 0 0; font-size:13.5px; color:var(--ink-soft);}
+</style>
+
+<div class="wrap">
+
+  <header class="ticket">
+    <div class="ticket-eyebrow"><span class="dash"></span>Phiếu công đoạn xưởng cắt</div>
+    <h1>Từ file thô<br>đến file lên máy</h1>
+    <p class="lede">
+      Mỗi file thiết kế trước khi đưa vào máy cắt laser đều đi qua 5 trạm kiểm tra —
+      giống như cách một tấm vật liệu đi qua từng công đoạn trên xưởng trước khi thành
+      thành phẩm. Dưới đây là những gì xảy ra ở mỗi trạm, viết lại bằng ngôn ngữ của người
+      thiết kế, không phải ngôn ngữ của máy.
+    </p>
+    <div class="ticket-fields">
+      <div class="field"><div class="k">Đầu vào</div><div class="v">File DXF thô</div></div>
+      <div class="field"><div class="k">Số trạm</div><div class="v">05</div></div>
+      <div class="field"><div class="k">Đầu ra</div><div class="v">File sẵn sàng cắt</div></div>
+      <div class="field"><div class="k">Vật liệu tham chiếu</div><div class="v">Bề dày &amp; khổ tấm đã khai báo</div></div>
+    </div>
+  </header>
+
+  <div class="legend">
+    <span><i class="sw" style="background:var(--cut)"></i> Lỗi nghiêm trọng — phải sửa trước khi cắt</span>
+    <span><i class="sw" style="background:var(--warn)"></i> Cảnh báo — nên xem lại</span>
+    <span><i class="sw" style="background:var(--engrave)"></i> Ghi nhận — máy đã tự xử lý</span>
+  </div>
+
+  <div class="spine">
+    <div class="spine-line"></div>
+
+    <!-- STATION 1 -->
+    <div class="station">
+      <div class="station-num">1</div>
+      <div class="station-card">
+        <div class="station-head">
+          <h2>Ghép các nét đứt lại thành một đường cắt liền</h2>
+          <span class="station-tag">Trạm nối nét</span>
+        </div>
+        <div class="station-body">
+          <div class="station-icon">
+            <svg viewBox="0 0 150 120">
+              <path d="M18 70 L55 70" stroke="var(--steel)" stroke-width="2.5" stroke-dasharray="5 5" fill="none"/>
+              <path d="M95 70 L132 70" stroke="var(--steel)" stroke-width="2.5" stroke-dasharray="5 5" fill="none"/>
+              <path d="M55 70 Q75 40 95 70" stroke="var(--cut)" stroke-width="3" fill="none" stroke-linecap="round"/>
+              <circle cx="55" cy="70" r="3.5" fill="var(--cut)"/>
+              <circle cx="95" cy="70" r="3.5" fill="var(--cut)"/>
+              <text x="75" y="100" text-anchor="middle" font-family="IBM Plex Mono" font-size="10" fill="var(--ink-soft)">khe hở → nối</text>
+            </svg>
+          </div>
+          <div class="station-desc">
+            <p>File xuất từ phần mềm vẽ hiếm khi có đường nét liền mạch tuyệt đối — hai đầu
+            mút của một đường bao thường lệch nhau vài phần trăm milimét. Trạm này rà lại
+            toàn bộ đầu mút, kéo những điểm đủ gần nhau lại làm một, rồi nối các đoạn rời
+            thành một đường cắt khép kín.</p>
+            <p class="analogy">Giống như người thợ dùng thước áp sát để kiểm tra xem hai
+            mép ghép có thật sự khít nhau không, trước khi hàn chúng lại.</p>
+          </div>
+        </div>
+        <div class="flags">
+          <div class="flag crit"><span class="dot"></span><span><b>Hở đường cắt:</b> hai đầu mút cách nhau quá xa để tự nối — đường bao coi như chưa khép kín, máy sẽ không cắt được thành vòng kín.</span></div>
+          <div class="flag warn"><span class="dot"></span><span><b>Giao điểm mù mờ:</b> tại một điểm có nhiều hơn hai đầu nét gặp nhau, hệ thống buộc phải tự chọn một hướng nối — nên xem lại bản vẽ gốc tại vị trí đó.</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- STATION 2 -->
+    <div class="station">
+      <div class="station-num">2</div>
+      <div class="station-card">
+        <div class="station-head">
+          <h2>Dọn nét vẽ chồng lên nhau</h2>
+          <span class="station-tag">Trạm lọc nét trùng</span>
+        </div>
+        <div class="station-body">
+          <div class="station-icon">
+            <svg viewBox="0 0 150 120">
+              <line x1="20" y1="50" x2="130" y2="50" stroke="var(--hairline)" stroke-width="3"/>
+              <line x1="35" y1="80" x2="115" y2="80" stroke="var(--cut)" stroke-width="3.5" stroke-linecap="round"/>
+              <line x1="20" y1="80" x2="35" y2="80" stroke="var(--cut)" stroke-width="3.5" stroke-dasharray="2 4" opacity=".5"/>
+              <line x1="115" y1="80" x2="130" y2="80" stroke="var(--cut)" stroke-width="3.5" stroke-dasharray="2 4" opacity=".5"/>
+              <text x="75" y="30" text-anchor="middle" font-family="IBM Plex Mono" font-size="10" fill="var(--ink-soft)">2 nét cùng chỗ → 1 nét</text>
+            </svg>
+          </div>
+          <div class="station-desc">
+            <p>Khi một đường được vẽ đè lên đường khác (thường do copy nhầm, hoặc do hai
+            chi tiết dùng chung một mép cắt), máy cắt sẽ đi dao hai lần trên cùng một chỗ —
+            vừa tốn thời gian, vừa làm cháy mép vật liệu. Trạm này tìm và gộp các nét trùng
+            hoặc chồng lấn thành một nét cắt duy nhất.</p>
+            <p class="analogy">Với mép cắt dùng chung giữa hai chi tiết (cắt chung một
+            đường để tiết kiệm vật liệu), hệ thống chỉ gộp nét khi bạn chủ động bật tùy chọn
+            "cắt đường chung" — nếu không, đường đó được giữ nguyên vì đó là chủ đích thiết kế.</p>
+          </div>
+        </div>
+        <div class="flags">
+          <div class="flag info"><span class="dot"></span><span><b>Đã gỡ nét trùng:</b> một đường vẽ đè hoàn toàn lên đường khác đã được xoá bớt.</span></div>
+          <div class="flag info"><span class="dot"></span><span><b>Đã gộp đoạn chồng mí:</b> nhiều đoạn thẳng cùng phương, chồng lên nhau một phần, được nối lại thành một nét dài duy nhất.</span></div>
+          <div class="flag warn"><span class="dot"></span><span><b>Mép cắt dùng chung:</b> hai chi tiết cạnh nhau đang chia sẻ một đường cắt — ghi nhận để bạn xác nhận đây đúng là chủ đích.</span></div>
+          <div class="flag crit"><span class="dot"></span><span><b>Đường bao bị bung ra:</b> việc gỡ nét trùng vô tình làm một hình vốn đã khép kín bị hở lại — cần kiểm tra tay.</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- STATION 3 -->
+    <div class="station">
+      <div class="station-num">3</div>
+      <div class="station-card">
+        <div class="station-head">
+          <h2>Vét những mảnh vụn không đáng cắt</h2>
+          <span class="station-tag">Trạm lọc mảnh vụn</span>
+        </div>
+        <div class="station-body">
+          <div class="station-icon">
+            <svg viewBox="0 0 150 120">
+              <rect x="45" y="35" width="60" height="50" rx="6" fill="none" stroke="var(--cut)" stroke-width="3"/>
+              <circle cx="118" cy="30" r="6" fill="none" stroke="var(--steel)" stroke-width="2.5"/>
+              <line x1="112" y1="24" x2="124" y2="36" stroke="var(--steel)" stroke-width="2"/>
+              <line x1="124" y1="24" x2="112" y2="36" stroke="var(--steel)" stroke-width="2"/>
+              <text x="75" y="105" text-anchor="middle" font-family="IBM Plex Mono" font-size="10" fill="var(--ink-soft)">mảnh li ti → loại bỏ</text>
+            </svg>
+          </div>
+          <div class="station-desc">
+            <p>Đôi khi bản vẽ còn sót lại những vòng nét tí hon — vài phần mười milimét vuông
+            — là dấu vết của việc vẽ nháp, snap điểm lệch, hoặc lỗi xuất file. Những mảnh này
+            quá nhỏ để cắt ra một chi tiết thật, nhưng vẫn đủ để máy dừng lại "cắt" một chấm
+            vô nghĩa. Trạm này đo chu vi và diện tích từng vòng nét khép kín, loại bỏ những
+            vòng nhỏ hơn ngưỡng cho phép.</p>
+            <p class="analogy">Giống như người kiểm hàng gạt bỏ những vụn vật liệu vương lại
+            trên bàn cắt trước khi đóng gói thành phẩm.</p>
+          </div>
+        </div>
+        <div class="flags">
+          <div class="flag info"><span class="dot"></span><span><b>Đã loại mảnh vụn:</b> một vòng nét nhỏ hơn chu vi hoặc diện tích tối thiểu cho phép đã bị gỡ khỏi file — vị trí được ghi lại để bạn đối chiếu nếu cần.</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- STATION 4 -->
+    <div class="station">
+      <div class="station-num">4</div>
+      <div class="station-card">
+        <div class="station-head">
+          <h2>Phân biệt đâu là hình, đâu là lỗ</h2>
+          <span class="station-tag">Trạm dựng cấu trúc chi tiết</span>
+        </div>
+        <div class="station-body">
+          <div class="station-icon">
+            <svg viewBox="0 0 150 120">
+              <path d="M75 20 A40 40 0 1 1 74.9 20" fill="none" stroke="var(--cut)" stroke-width="3"/>
+              <circle cx="75" cy="60" r="16" fill="none" stroke="var(--engrave)" stroke-width="2.5" stroke-dasharray="4 3"/>
+              <text x="75" y="105" text-anchor="middle" font-family="IBM Plex Mono" font-size="10" fill="var(--ink-soft)">ngoài (đỏ) · lỗ (xanh)</text>
+            </svg>
+          </div>
+          <div class="station-desc">
+            <p>Một chi tiết thật sự gồm một đường bao ngoài, có thể kèm một hay nhiều lỗ bên
+            trong (lỗ bắt vít, lỗ khoét trang trí, lỗ lồng chi tiết khác...). Trạm này xét
+            xem mỗi vòng nét khép kín nằm lồng trong bao nhiêu vòng khác: nằm trong một số
+            chẵn vòng (kể cả không nằm trong vòng nào) thì đó là đường bao ngoài của một
+            chi tiết; nằm trong một số lẻ vòng thì đó là lỗ của chi tiết bao ngay bên ngoài nó.</p>
+            <p class="analogy">Như cách người thợ nhìn một tấm bìa có vòng tròn lồng vòng
+            tròn và biết ngay: "cái ngoài cùng là hình, cái vừa lồng vào là lỗ, cái lồng tiếp
+            theo lại là một chi tiết con nằm trong lỗ đó".</p>
+          </div>
+        </div>
+        <div class="flags">
+          <div class="flag crit"><span class="dot"></span><span><b>Bỏ qua vì chưa khép kín:</b> một đường nét chưa khép thành vòng kín không thể xác định là hình hay lỗ, nên bị loại khỏi cấu trúc chi tiết — quay lại Trạm 1 để kiểm tra.</span></div>
+          <div class="flag warn"><span class="dot"></span><span><b>Hình tự cắt chính nó:</b> đường bao bị tự giao cắt (thắt nút) đã được nắn lại tự động — nên xem qua để chắc hình không bị méo.</span></div>
+          <div class="flag crit"><span class="dot"></span><span><b>Không thể nắn được:</b> hình tự giao cắt quá phức tạp để phục hồi thành một vòng hợp lệ — chi tiết này bị loại hoàn toàn.</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- STATION 5 -->
+    <div class="station">
+      <div class="station-num">5</div>
+      <div class="station-card">
+        <div class="station-head">
+          <h2>Soát lại lần cuối trước khi lên máy</h2>
+          <span class="station-tag">Trạm kiểm tra chất lượng</span>
+        </div>
+        <div class="station-body">
+          <div class="station-icon">
+            <svg viewBox="0 0 150 120">
+              <rect x="20" y="30" width="45" height="60" rx="4" fill="none" stroke="var(--cut)" stroke-width="2.5"/>
+              <rect x="85" y="30" width="45" height="60" rx="4" fill="none" stroke="var(--cut)" stroke-width="2.5"/>
+              <line x1="65" y1="60" x2="85" y2="60" stroke="var(--warn)" stroke-width="2" stroke-dasharray="3 3"/>
+              <path d="M65 55 l4 5 -4 5 M85 55 l-4 5 4 5" stroke="var(--warn)" stroke-width="2" fill="none"/>
+              <text x="75" y="108" text-anchor="middle" font-family="IBM Plex Mono" font-size="10" fill="var(--ink-soft)">khoảng cách &amp; khổ tấm</text>
+            </svg>
+          </div>
+          <div class="station-desc">
+            <p>Trước khi file được coi là "sẵn sàng cắt", hệ thống soát lại toàn bộ như một
+            người kiểm hàng dày dạn kinh nghiệm: chi tiết có vừa khổ tấm vật liệu không, lỗ
+            có đủ lớn so với bề dày vật liệu để không bị bung khi cắt không, có hai chi tiết
+            nào vẽ trùng nhau hoàn toàn không, có hai hình nào chồng lấn thật sự (lỗi thiết
+            kế) không, và khoảng cách giữa các chi tiết có đủ rộng hơn hai lần bề rộng vệt
+            cắt (kerf) hay không — vì tia laser có bề dày thật, không phải một đường toán học.</p>
+            <p class="analogy">Đây là công đoạn dán tem "đạt" hoặc "cần xem lại" trước khi
+            đưa file lên bàn máy.</p>
+          </div>
+        </div>
+        <div class="flags">
+          <div class="flag crit"><span class="dot"></span><span><b>File rỗng:</b> không còn chi tiết nào sống sót qua các bước xử lý trước — có thể toàn bộ bản vẽ đã bị loại nhầm.</span></div>
+          <div class="flag crit"><span class="dot"></span><span><b>Vượt khổ tấm:</b> một chi tiết lớn hơn kích thước tấm vật liệu đã khai báo, không thể cắt được.</span></div>
+          <div class="flag warn"><span class="dot"></span><span><b>Lỗ quá nhỏ so với bề dày vật liệu:</b> lỗ có nguy cơ bị rách mép hoặc gãy khi tấm vật liệu dày, nên cần nới rộng.</span></div>
+          <div class="flag warn"><span class="dot"></span><span><b>Hai chi tiết trùng nhau hoàn toàn:</b> khả năng cao là copy nhầm — kiểm tra xem có thật sự cần cắt hai bản giống hệt không.</span></div>
+          <div class="flag warn"><span class="dot"></span><span><b>Hai hình chồng lấn thật sự:</b> không phải mép cắt chung, mà là hai chi tiết đè thật sự lên nhau — lỗi bố trí cần sửa tay.</span></div>
+          <div class="flag warn"><span class="dot"></span><span><b>Sát nhau hơn mức an toàn:</b> khoảng cách giữa hai chi tiết nhỏ hơn hai lần bề rộng vệt cắt, dễ làm mép bị cháy lem hoặc dính vào nhau khi cắt.</span></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <section class="glossary">
+    <div class="glossary-head">
+      <h2>Bảng thuật ngữ</h2>
+      <span class="station-tag">Tra nhanh</span>
+    </div>
+    <p class="glossary-lede">Một vài từ trong phiếu công đoạn này quen thuộc với thợ cắt
+    hơn là với người mới thiết kế — tra nhanh tại đây.</p>
+    <ul class="glossary-list">
+      <li><dt>DXF</dt><dd>Định dạng file bản vẽ 2D dùng chung giữa phần mềm thiết kế (AutoCAD, Illustrator, CorelDRAW...) và máy cắt laser.</dd></li>
+      <li><dt>Đường bao / biên dạng</dt><dd>Một vòng nét khép kín mô tả rìa của một hình — có thể là mép ngoài của chi tiết hoặc viền của một lỗ.</dd></li>
+      <li><dt>Chi tiết</dt><dd>Một hình hoàn chỉnh sẽ được cắt ra thành một miếng vật liệu — gồm đường bao ngoài và (nếu có) các lỗ bên trong.</dd></li>
+      <li><dt>Kerf (bề rộng vệt cắt)</dt><dd>Lượng vật liệu bị tia laser đốt/thổi bay dọc đường cắt. Đường cắt trên bản vẽ là một nét toán học mảnh, nhưng ngoài thực tế nó "ăn" mất một dải vật liệu có bề rộng thật.</dd></li>
+      <li><dt>Khổ tấm</dt><dd>Kích thước tối đa (dài × rộng) của tấm vật liệu mà máy cắt có thể nạp vào một lần.</dd></li>
+      <li><dt>Cắt đường chung (mép cắt dùng chung)</dt><dd>Hai chi tiết nằm sát nhau dùng chung một đường cắt duy nhất, tiết kiệm vật liệu và thời gian máy chạy, thay vì mỗi chi tiết cắt riêng một mép.</dd></li>
+      <li><dt>Đường engrave (khắc)</dt><dd>Nét chỉ khắc mờ trên bề mặt, không cắt xuyên vật liệu — thường dùng cho chữ, logo, đường gấp trang trí.</dd></li>
+      <li><dt>Mảnh vụn / nhiễu</dt><dd>Vòng nét khép kín nhỏ đến mức không thể là một chi tiết thật — thường là lỗi vẽ nháp hoặc lỗi xuất file còn sót lại.</dd></li>
+    </ul>
+  </section>
+
+  <div class="outcome">
+    <div>
+      <h3>Kết quả cuối cùng</h3>
+      <p>File đi qua đủ 5 trạm sẽ được xuất lại thành một file DXF mới — đường nét sạch,
+      chi tiết đã tách bạch hình và lỗ, kèm một phiếu ghi rõ mọi điều đã sửa và mọi điều
+      cần bạn xem lại trước khi cắt thật.</p>
+    </div>
+    <div class="stamp">Sẵn sàng lên máy</div>
+  </div>
+
+</div>
