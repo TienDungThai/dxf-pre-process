@@ -1,0 +1,54 @@
+name: Build Windows executable
+
+# Runs on GitHub's hosted Windows runner (no local Windows machine needed).
+# Triggers on every push to master and can also be run manually from the
+# Actions tab. The .exe is uploaded as a workflow artifact -- download it
+# from the run's summary page.
+on:
+  push:
+    branches: [master]
+    paths:
+      - "dxf_cleaner/**"
+      - "pyproject.toml"
+      - ".github/workflows/build-windows.yml"
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install project and PyInstaller
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install .
+          python -m pip install pyinstaller
+
+      - name: Build dxfclean.exe
+        run: >
+          pyinstaller
+          --onefile
+          --name dxfclean
+          --collect-all cv2
+          --collect-all skimage
+          --collect-all scipy
+          --collect-all shapely
+          --collect-all pydantic
+          --collect-all pydantic_core
+          --collect-all ezdxf
+          dxf_cleaner/cli.py
+
+      - name: Smoke test the built exe
+        run: |
+          dist\dxfclean.exe --help
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dxfclean-windows
+          path: dist/dxfclean.exe
+          retention-days: 30

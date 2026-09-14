@@ -36,6 +36,18 @@ Repo có sẵn 2 file ở thư mục gốc:
 
 Nếu báo `python is not recognized`: cài lại Python từ https://www.python.org/downloads/, nhớ tick **"Add Python to PATH"**.
 
+### Bản `.exe` độc lập — không cần cài Python trên máy xưởng
+
+Repo có workflow tự động (`.github/workflows/build-windows.yml`) build sẵn `dxfclean.exe` trên máy ảo Windows của GitHub mỗi khi có cập nhật lên nhánh `master`. Tải file này về từ tab **Actions** trên GitHub (chọn lần chạy mới nhất → mục Artifacts → `dxfclean-windows`).
+
+Dùng y hệt cú pháp dòng lệnh, chỉ đổi `python -m dxf_cleaner.cli` thành tên file exe:
+
+```
+dxfclean.exe logo.png -o logo.dxf -w 200 -t 2
+```
+
+**Lưu ý:** đây chỉ là đóng gói bytecode vào 1 file chạy được (PyInstaller), **không phải mã hóa** — không chống được kỹ sư cố tình dịch ngược, chỉ hạn chế việc mở xem/copy tình cờ. File khá nặng (~150–300MB do có opencv/scipy/scikit-image) và load chậm vài giây mỗi lần chạy.
+
 ### Chạy tay bằng dòng lệnh (mọi hệ điều hành)
 
 Cài lần đầu (đã bao gồm các thư viện xử lý ảnh: Pillow, opencv, scikit-image, scipy):
