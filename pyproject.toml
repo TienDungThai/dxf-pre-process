@@ -13,6 +13,7 @@ dependencies = [
     "opencv-python-headless>=4.9",
     "scikit-image>=0.22",
     "scipy>=1.11",
+    "tkinterdnd2>=0.4.2",
 ]
 
 [project.optional-dependencies]
@@ -20,6 +21,7 @@ dev = ["pytest>=8.0"]
 
 [project.scripts]
 dxfclean = "dxf_cleaner.cli:main"
+dxfclean-gui = "dxf_cleaner.gui:main"
 
 [build-system]
 requires = ["setuptools>=68"]

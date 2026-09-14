@@ -50,8 +50,26 @@ jobs:
         run: |
           dist\dxfclean.exe --help
 
+      - name: Build dxfclean-gui.exe
+        run: >
+          pyinstaller
+          --onefile
+          --windowed
+          --name dxfclean-gui
+          --collect-all cv2
+          --collect-all skimage
+          --collect-all scipy
+          --collect-all shapely
+          --collect-all pydantic
+          --collect-all pydantic_core
+          --collect-all ezdxf
+          --collect-all tkinterdnd2
+          dxf_cleaner/gui.py
+
       - uses: actions/upload-artifact@v4
         with:
           name: dxfclean-windows
-          path: dist/dxfclean.exe
+          path: |
+            dist/dxfclean.exe
+            dist/dxfclean-gui.exe
           retention-days: 30
