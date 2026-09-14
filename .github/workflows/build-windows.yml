@@ -1,5 +1,8 @@
 name: Build Windows executable
 
+# Force-touch to generate a fresh push event while diagnosing why GitHub
+# wasn't listing this workflow in the Actions tab after the first push.
+#
 # Runs on GitHub's hosted Windows runner (no local Windows machine needed).
 # Triggers on every push to master and can also be run manually from the
 # Actions tab. The .exe is uploaded as a workflow artifact -- download it
