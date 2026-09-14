@@ -27,6 +27,17 @@ số pixel cần = khổ cắt (mm) ÷ 25,4 × 300
 
 ## 2. Cài đặt / môi trường
 
+### Trên Windows (xưởng) — dùng file có sẵn, không cần gõ lệnh
+
+Repo có sẵn 2 file ở thư mục gốc:
+
+- **`CAI-DAT.bat`** — chạy 1 lần duy nhất khi mới nhận máy/mới clone repo. Kiểm tra Python, tự cài `dxfclean` cùng mọi thư viện cần thiết (Pillow, opencv, scikit-image, scipy...).
+- **`CHAY.bat`** — dùng hằng ngày. Kéo-thả file (`.dxf`, `.png`, `.jpg`, hoặc cả một thư mục) vào file này, nhập khổ rộng (mm) và độ dày tôn (mm) khi được hỏi. Kết quả nằm trong thư mục `ket-qua\` cạnh `CHAY.bat`.
+
+Nếu báo `python is not recognized`: cài lại Python từ https://www.python.org/downloads/, nhớ tick **"Add Python to PATH"**.
+
+### Chạy tay bằng dòng lệnh (mọi hệ điều hành)
+
 Cài lần đầu (đã bao gồm các thư viện xử lý ảnh: Pillow, opencv, scikit-image, scipy):
 
 ```bash
