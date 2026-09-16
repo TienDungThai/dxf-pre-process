@@ -233,7 +233,26 @@ Nếu khối lượng công việc lớn hoặc cần các tính năng trên, c�
 
 ---
 
-## 9. Ví dụ đầy đủ
+## 9. Cách đọc cảnh báo "nét mảnh" cho đúng — đầu nhọn lồi khác cầu nối mỏng
+
+`min_feature_width_mm` và các vùng đỏ trên `_KIEMTRA.png` đo **mù theo bề rộng cục bộ** (khoảng cách tới biên gần nhất × 2), không phân biệt được 2 tình huống có rủi ro rất khác nhau khi cắt thật:
+
+- **Cầu nối mỏng (bridge/web)** — một dải kim loại mỏng nối 2 vùng lớn, bị cắt hở cả 2 bên (ví dụ chân chữ dính sát nhau, gọng kính). Loại này **dễ cong vênh, cháy cạnh, gãy khi thao tác** — đúng đối tượng mà quy tắc "nét mảnh nhất ≥ 2× độ dày tôn" nhắm tới. **Phải xử lý theo cảnh báo** (tăng khổ, đổi tôn, hoặc từ chối đơn).
+- **Đầu nhọn lồi (convex tip)** — như đầu tia nắng, đầu vảy lông, mũi lá — chỉ có 1 cạnh là biên cắt, phía sau vẫn liền khối kim loại lớn, không bị treo lơ lửng hai đầu. Loại này **thường vẫn cắt được bình thường**, mũi nhọn chỉ hơi tù đi vài trăm micromet so với thiết kế — không phải nguy cơ cong vênh/rơi rớt như cầu nối, dù công thức đo vẫn báo động y hệt.
+
+Vì công cụ không tự phân biệt được 2 loại này, khi gặp `CRITICAL`/`WARNING` do nét mảnh:
+
+1. Mở `_KIEMTRA.png`, nhìn từng vùng đỏ.
+2. Hỏi: **vùng đỏ này có 2 phía đều là khoảng trống (cắt hở cả 2 bên) hay chỉ 1 phía là biên, phía kia vẫn liền khối?**
+   - 2 phía hở → cầu nối thật, làm theo cảnh báo (tăng khổ / đổi tôn / báo khách sửa file).
+   - Chỉ 1 phía hở, đúng dạng đầu nhọn của một chi tiết trang trí (tia nắng, lông, gai...) → có thể chấp nhận cắt, không cần làm tù nét gốc, nhưng **vẫn phải báo tổ trưởng duyệt tay** trước khi cắt hàng loạt (đúng quy trình mục 6 bước 4-5), vì công cụ không tự động phân loại được.
+3. Không tự ý bỏ qua cảnh báo mà không có người duyệt — đây là quyết định nghiệp vụ, không phải lỗi phần mềm.
+
+*(Ghi chú kỹ thuật: việc dạy công cụ tự phân biệt 2 trường hợp này — ví dụ chỉ báo CRITICAL cho các điểm mảnh nằm giữa 2 vùng rỗng, hạ mức đầu nhọn lồi xuống INFO — đang được cân nhắc bổ sung, chưa có trong bản hiện tại.)*
+
+---
+
+## 10. Ví dụ đầy đủ
 
 ```bash
 # Tạo config khai báo độ dày tôn 1 lần, tái sử dụng cho nhiều đơn

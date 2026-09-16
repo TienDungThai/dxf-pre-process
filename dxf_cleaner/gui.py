@@ -24,16 +24,32 @@ except ImportError:
     _HAS_DND = False
 
 _LOG_COLORS = {"critical": "#c0392b", "warning": "#b8860b", "info": "#222222"}
+_HINT_STYLE = {"foreground": "#666666", "font": ("", 9)}
 
-WELD_MODES = ["off", "overlapping", "all"]
+# (gia_tri_truyen_cho_pipeline, nhan_hien_thi_tren_giao_dien)
+WELD_MODES = [
+    ("", "(Mặc định: overlapping)"),
+    ("off", "Không hàn nét chồng nhau"),
+    ("overlapping", "Chỉ hàn nét chồng khớp nhau (khuyên dùng)"),
+    ("all", "Hàn mọi nét ở gần nhau"),
+]
+# Quy đổi DPI -> pixels/mm: 1 inch = 25.4mm.
+MM_PER_INCH = 25.4
+
+_RESULT_LABELS = {
+    0: "OK",
+    1: "CÓ CẢNH BÁO",
+    2: "LỖI NGHIÊM TRỌNG - KHÔNG XUẤT FILE",
+    3: "LỖI HỆ THỐNG",
+}
 
 
 class App:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
-        root.title("DXF Cleaner")
-        root.geometry("640x600")
-        root.minsize(560, 480)
+        root.title("DXF Cleaner - Dọn file cho máy cắt laser")
+        root.geometry("700x720")
+        root.minsize(640, 580)
 
         self.input_path_var = tk.StringVar()
         self.output_path_var = tk.StringVar()
@@ -41,83 +57,187 @@ class App:
         self.snap_tol_var = tk.StringVar()
         self.weld_mode_var = tk.StringVar(value="")
         self.no_simplify_var = tk.BooleanVar(value=False)
+        self.thickness_var = tk.StringVar()
+
+        # Chỉ 1 trong 3 giá trị này được dùng để quy đổi pixel sang mm cho
+        # ảnh raster -- loại trừ lẫn nhau bằng radio button (không chỉ bằng
+        # validation) để người dùng không thể vô tình nhập cả 3 cùng lúc.
+        self.raster_scale_mode = tk.StringVar(value="width")
         self.width_mm_var = tk.StringVar()
         self.height_mm_var = tk.StringVar()
-        self.px_per_mm_var = tk.StringVar()
+        self.dpi_var = tk.StringVar()
+
         self.invert_var = tk.BooleanVar(value=False)
         self.raster_threshold_var = tk.StringVar()
-        self.thickness_var = tk.StringVar()
 
         self._log_queue: queue.Queue = queue.Queue()
         self._worker: threading.Thread | None = None
+        self._last_output_dir: Path | None = None
 
         self._build_widgets()
+        self._update_raster_scale_state()
         self.root.after(100, self._drain_log_queue)
 
-    # -- UI layout -----------------------------------------------------
+    # -- Bố cục giao diện -----------------------------------------------
 
     def _build_widgets(self) -> None:
         pad = {"padx": 8, "pady": 4}
 
-        io_frame = ttk.LabelFrame(self.root, text="Input / Output")
+        io_frame = ttk.LabelFrame(self.root, text="Đầu vào / Đầu ra")
         io_frame.pack(fill="x", **pad)
+        io_frame.columnconfigure(0, weight=1)
 
-        drop_label = "File hoac thu muc (co the keo-tha vao day)" if _HAS_DND else "File hoac thu muc"
-        ttk.Label(io_frame, text=drop_label).grid(row=0, column=0, sticky="w", padx=6, pady=(6, 0))
+        drop_hint = " (có thể kéo-thả file vào ô bên dưới)" if _HAS_DND else ""
+        ttk.Label(io_frame, text=f"File DXF/PNG/JPG, hoặc cả thư mục chứa nhiều file{drop_hint}:") \
+            .grid(row=0, column=0, sticky="w", padx=6, pady=(6, 0))
         input_row = ttk.Frame(io_frame)
-        input_row.grid(row=1, column=0, sticky="ew", padx=6, pady=(0, 6))
+        input_row.grid(row=1, column=0, sticky="ew", padx=6, pady=(0, 2))
         input_row.columnconfigure(0, weight=1)
         input_entry = ttk.Entry(input_row, textvariable=self.input_path_var)
         input_entry.grid(row=0, column=0, sticky="ew")
-        ttk.Button(input_row, text="Chon file...", command=self._choose_input_file).grid(row=0, column=1, padx=(4, 0))
-        ttk.Button(input_row, text="Chon thu muc...", command=self._choose_input_dir).grid(row=0, column=2, padx=(4, 0))
+        ttk.Button(input_row, text="Chọn file...", command=self._choose_input_file) \
+            .grid(row=0, column=1, padx=(4, 0))
+        ttk.Button(input_row, text="Chọn thư mục...", command=self._choose_input_dir) \
+            .grid(row=0, column=2, padx=(4, 0))
 
         if _HAS_DND:
             input_entry.drop_target_register(DND_FILES)
             input_entry.dnd_bind("<<Drop>>", self._on_drop)
 
-        ttk.Label(io_frame, text="Output (bo trong = ghi canh file goc)").grid(row=2, column=0, sticky="w", padx=6)
+        ttk.Label(
+            io_frame,
+            text="Nếu chọn cả thư mục: mọi tùy chọn bên dưới sẽ áp dụng CHUNG cho tất cả file trong đó.",
+            **_HINT_STYLE,
+        ).grid(row=2, column=0, sticky="w", padx=6, pady=(0, 6))
+
+        ttk.Label(io_frame, text="Nơi lưu kết quả (để trống = lưu cạnh file gốc):") \
+            .grid(row=3, column=0, sticky="w", padx=6)
         output_row = ttk.Frame(io_frame)
-        output_row.grid(row=3, column=0, sticky="ew", padx=6, pady=(0, 6))
+        output_row.grid(row=4, column=0, sticky="ew", padx=6, pady=(0, 6))
         output_row.columnconfigure(0, weight=1)
         ttk.Entry(output_row, textvariable=self.output_path_var).grid(row=0, column=0, sticky="ew")
-        ttk.Button(output_row, text="Chon...", command=self._choose_output).grid(row=0, column=1, padx=(4, 0))
+        ttk.Button(output_row, text="Chọn...", command=self._choose_output).grid(row=0, column=1, padx=(4, 0))
 
-        io_frame.columnconfigure(0, weight=1)
+        # -- Tùy chọn chung -------------------------------------------
+        general_frame = ttk.LabelFrame(self.root, text="Tùy chọn chung")
+        general_frame.pack(fill="x", **pad)
+        general_frame.columnconfigure(1, weight=1)
 
-        opts_frame = ttk.LabelFrame(self.root, text="Tuy chon xu ly")
-        opts_frame.pack(fill="x", **pad)
-        for col in range(4):
-            opts_frame.columnconfigure(col, weight=1)
+        ttk.Checkbutton(
+            general_frame,
+            text="Chỉ kiểm tra, không ghi file DXF (vẫn ghi ảnh _KIEMTRA.png)",
+            variable=self.check_var,
+        ).grid(row=0, column=0, columnspan=2, sticky="w", padx=6, pady=2)
 
-        ttk.Checkbutton(opts_frame, text="Chi kiem tra (khong ghi file)", variable=self.check_var) \
-            .grid(row=0, column=0, columnspan=2, sticky="w", padx=6, pady=2)
-        ttk.Checkbutton(opts_frame, text="Tat simplify", variable=self.no_simplify_var) \
-            .grid(row=0, column=2, columnspan=2, sticky="w", padx=6, pady=2)
+        ttk.Label(general_frame, text="Độ dày vật liệu / tôn (mm):").grid(row=1, column=0, sticky="w", padx=6)
+        ttk.Entry(general_frame, textvariable=self.thickness_var, width=10) \
+            .grid(row=1, column=1, sticky="w", padx=6)
+        ttk.Label(
+            general_frame,
+            text="Dùng để kiểm tra nét/lỗ có đủ rộng để cắt không (mặc định 2.0mm nếu để trống).",
+            **_HINT_STYLE,
+        ).grid(row=2, column=0, columnspan=2, sticky="w", padx=6, pady=(0, 4))
 
-        self._labeled_entry(opts_frame, "Snap tolerance", self.snap_tol_var, row=1, col=0)
-        self._weld_combo(opts_frame, row=1, col=2)
+        # -- Làm sạch nét -------------------------------------------
+        clean_frame = ttk.LabelFrame(self.root, text="Làm sạch nét (áp dụng cho cả DXF và ảnh)")
+        clean_frame.pack(fill="x", **pad)
+        clean_frame.columnconfigure(1, weight=1)
+        clean_frame.columnconfigure(3, weight=1)
 
-        self._labeled_entry(opts_frame, "Do day vat lieu (mm)", self.thickness_var, row=2, col=0)
-        self._labeled_entry(opts_frame, "Width (mm, raster)", self.width_mm_var, row=2, col=2)
+        ttk.Label(clean_frame, text="Dung sai hàn nối (mm):").grid(row=0, column=0, sticky="w", padx=6, pady=2)
+        ttk.Entry(clean_frame, textvariable=self.snap_tol_var, width=10) \
+            .grid(row=0, column=1, sticky="w", padx=6, pady=2)
+        ttk.Label(
+            clean_frame,
+            text="Khoảng cách tối đa để tự hàn 2 đầu đoạn gần nhau (mặc định 0.05mm).",
+            **_HINT_STYLE,
+        ).grid(row=1, column=0, columnspan=2, sticky="w", padx=6, pady=(0, 4))
 
-        self._labeled_entry(opts_frame, "Height (mm, raster)", self.height_mm_var, row=3, col=0)
-        self._labeled_entry(opts_frame, "Pixels/mm (raster)", self.px_per_mm_var, row=3, col=2)
+        ttk.Label(clean_frame, text="Chế độ hàn nét chồng nhau (weld):") \
+            .grid(row=0, column=2, sticky="w", padx=6, pady=2)
+        self.weld_combo = ttk.Combobox(
+            clean_frame, textvariable=self.weld_mode_var,
+            values=[label for _, label in WELD_MODES], width=32, state="readonly",
+        )
+        self.weld_combo.current(0)
+        self.weld_combo.grid(row=0, column=3, sticky="w", padx=6, pady=2)
+        self.weld_combo.bind("<<ComboboxSelected>>", self._on_weld_combo_changed)
 
-        self._labeled_entry(opts_frame, "Raster threshold (0-255)", self.raster_threshold_var, row=4, col=0)
-        ttk.Checkbutton(opts_frame, text="Dao mau (raster)", variable=self.invert_var) \
-            .grid(row=4, column=2, columnspan=2, sticky="w", padx=6, pady=2)
+        ttk.Checkbutton(
+            clean_frame,
+            text="Tắt giảm node (giữ nguyên tất cả chi tiết, file sẽ nặng hơn)",
+            variable=self.no_simplify_var,
+        ).grid(row=2, column=0, columnspan=4, sticky="w", padx=6, pady=(2, 4))
 
+        # -- Tùy chọn riêng cho ảnh raster ---------------------------------
+        raster_frame = ttk.LabelFrame(
+            self.root, text="Chỉ dành cho ảnh PNG/JPG (không dùng khi đầu vào là DXF)"
+        )
+        raster_frame.pack(fill="x", **pad)
+        for col in range(2):
+            raster_frame.columnconfigure(col, weight=1)
+
+        ttk.Label(
+            raster_frame,
+            text="Chọn ĐÚNG 1 trong 3 cách để quy đổi pixel sang mm (2 ô còn lại sẽ tự khóa):",
+        ).grid(row=0, column=0, columnspan=2, sticky="w", padx=6, pady=(6, 2))
+
+        self.width_radio = ttk.Radiobutton(
+            raster_frame, text="Theo chiều rộng thật (mm)", value="width",
+            variable=self.raster_scale_mode, command=self._update_raster_scale_state,
+        )
+        self.width_radio.grid(row=1, column=0, sticky="w", padx=6, pady=2)
+        self.width_entry = ttk.Entry(raster_frame, textvariable=self.width_mm_var, width=12)
+        self.width_entry.grid(row=1, column=1, sticky="w", padx=6, pady=2)
+
+        self.height_radio = ttk.Radiobutton(
+            raster_frame, text="Theo chiều cao thật (mm)", value="height",
+            variable=self.raster_scale_mode, command=self._update_raster_scale_state,
+        )
+        self.height_radio.grid(row=2, column=0, sticky="w", padx=6, pady=2)
+        self.height_entry = ttk.Entry(raster_frame, textvariable=self.height_mm_var, width=12)
+        self.height_entry.grid(row=2, column=1, sticky="w", padx=6, pady=2)
+
+        self.dpi_radio = ttk.Radiobutton(
+            raster_frame, text="Theo độ phân giải ảnh gốc (DPI)", value="dpi",
+            variable=self.raster_scale_mode, command=self._update_raster_scale_state,
+        )
+        self.dpi_radio.grid(row=3, column=0, sticky="w", padx=6, pady=2)
+        self.dpi_entry = ttk.Entry(raster_frame, textvariable=self.dpi_var, width=12)
+        self.dpi_entry.grid(row=3, column=1, sticky="w", padx=6, pady=2)
+        ttk.Label(
+            raster_frame,
+            text="VD: ảnh ghi chú '300 DPI' thì nhập 300 vào đây (KHÔNG phải pixels/mm).",
+            **_HINT_STYLE,
+        ).grid(row=4, column=0, columnspan=2, sticky="w", padx=6, pady=(0, 4))
+
+        ttk.Label(raster_frame, text="Ngưỡng đen/trắng (0-255):").grid(row=5, column=0, sticky="w", padx=6, pady=2)
+        ttk.Entry(raster_frame, textvariable=self.raster_threshold_var, width=10) \
+            .grid(row=5, column=1, sticky="w", padx=6, pady=2)
+        ttk.Label(
+            raster_frame,
+            text="Để trống = tự động (Otsu). Chỉ tự chỉnh khi ảnh có bóng đổ hoặc gradient.",
+            **_HINT_STYLE,
+        ).grid(row=6, column=0, columnspan=2, sticky="w", padx=6, pady=(0, 4))
+
+        ttk.Checkbutton(
+            raster_frame,
+            text="Đảo màu đen/trắng (dùng khi ảnh nền tối, hình sáng)",
+            variable=self.invert_var,
+        ).grid(row=7, column=0, columnspan=2, sticky="w", padx=6, pady=(2, 6))
+
+        # -- Hành động -------------------------------------------------------
         action_row = ttk.Frame(self.root)
         action_row.pack(fill="x", **pad)
-        self.run_button = ttk.Button(action_row, text="Xu ly", command=self._on_run_clicked)
+        self.run_button = ttk.Button(action_row, text="Xử lý", command=self._on_run_clicked)
         self.run_button.pack(side="left")
         self.open_output_button = ttk.Button(
-            action_row, text="Mo thu muc ket qua", command=self._open_output_dir, state="disabled"
+            action_row, text="Mở thư mục kết quả", command=self._open_output_dir, state="disabled"
         )
         self.open_output_button.pack(side="left", padx=(8, 0))
 
-        log_frame = ttk.LabelFrame(self.root, text="Ket qua")
+        # -- Kết quả -------------------------------------------------------
+        log_frame = ttk.LabelFrame(self.root, text="Kết quả")
         log_frame.pack(fill="both", expand=True, **pad)
         self.log_text = tk.Text(log_frame, wrap="word", state="disabled", height=14)
         self.log_text.pack(side="left", fill="both", expand=True)
@@ -127,24 +247,21 @@ class App:
         scrollbar.pack(side="right", fill="y")
         self.log_text["yscrollcommand"] = scrollbar.set
 
-        self._last_output_dir: Path | None = None
+    def _on_weld_combo_changed(self, _event=None) -> None:
+        index = self.weld_combo.current()
+        self.weld_mode_var.set(WELD_MODES[index][0])
 
-    def _labeled_entry(self, parent, label, var, row, col) -> None:
-        ttk.Label(parent, text=label).grid(row=row, column=col, sticky="w", padx=6, pady=2)
-        ttk.Entry(parent, textvariable=var, width=12).grid(row=row, column=col + 1, sticky="w", padx=6, pady=2)
+    def _update_raster_scale_state(self) -> None:
+        mode = self.raster_scale_mode.get()
+        self.width_entry["state"] = "normal" if mode == "width" else "disabled"
+        self.height_entry["state"] = "normal" if mode == "height" else "disabled"
+        self.dpi_entry["state"] = "normal" if mode == "dpi" else "disabled"
 
-    def _weld_combo(self, parent, row, col) -> None:
-        ttk.Label(parent, text="Weld mode").grid(row=row, column=col, sticky="w", padx=6, pady=2)
-        combo = ttk.Combobox(
-            parent, textvariable=self.weld_mode_var, values=[""] + WELD_MODES, width=10, state="readonly"
-        )
-        combo.grid(row=row, column=col + 1, sticky="w", padx=6, pady=2)
-
-    # -- File pickers ----------------------------------------------------
+    # -- Chọn file/thư mục ----------------------------------------------------
 
     def _choose_input_file(self) -> None:
         path = filedialog.askopenfilename(
-            filetypes=[("DXF/Raster", "*.dxf *.png *.jpg *.jpeg"), ("Tat ca", "*.*")]
+            filetypes=[("DXF/Ảnh", "*.dxf *.png *.jpg *.jpeg"), ("Tất cả", "*.*")]
         )
         if path:
             self.input_path_var.set(path)
@@ -183,7 +300,7 @@ class App:
         else:
             subprocess.run(["xdg-open", str(self._last_output_dir)])
 
-    # -- Run pipeline ------------------------------------------------------
+    # -- Chạy pipeline ------------------------------------------------------
 
     def _float_or_none(self, s: str) -> float | None:
         s = s.strip()
@@ -199,26 +316,29 @@ class App:
 
         input_str = self.input_path_var.get().strip()
         if not input_str:
-            messagebox.showerror("Loi", "Chon file hoac thu muc dau vao truoc.")
+            messagebox.showerror("Lỗi", "Chọn file hoặc thư mục đầu vào trước.")
             return
         input_path = Path(input_str)
         if not input_path.exists():
-            messagebox.showerror("Loi", f"Khong tim thay: {input_path}")
+            messagebox.showerror("Lỗi", f"Không tìm thấy: {input_path}")
             return
 
         try:
-            width_mm = self._float_or_none(self.width_mm_var.get())
-            height_mm = self._float_or_none(self.height_mm_var.get())
             snap_tol = self._float_or_none(self.snap_tol_var.get())
-            px_per_mm = self._float_or_none(self.px_per_mm_var.get())
             raster_threshold = self._int_or_none(self.raster_threshold_var.get())
             thickness = self._float_or_none(self.thickness_var.get())
-        except ValueError:
-            messagebox.showerror("Loi", "Cac truong so phai la so hop le.")
-            return
 
-        if width_mm is not None and height_mm is not None:
-            messagebox.showerror("Loi", "Width-mm va height-mm khong the dung cung luc.")
+            width_mm = height_mm = px_per_mm = None
+            mode = self.raster_scale_mode.get()
+            if mode == "width":
+                width_mm = self._float_or_none(self.width_mm_var.get())
+            elif mode == "height":
+                height_mm = self._float_or_none(self.height_mm_var.get())
+            else:
+                dpi = self._float_or_none(self.dpi_var.get())
+                px_per_mm = (dpi / MM_PER_INCH) if dpi is not None else None
+        except ValueError:
+            messagebox.showerror("Lỗi", "Các trường số phải là số hợp lệ.")
             return
 
         output_str = self.output_path_var.get().strip()
@@ -250,13 +370,13 @@ class App:
         try:
             worst, report_path = process_path(input_path, output_path, config, check, log, width_mm, height_mm)
             if report_path is not None:
-                log("info", f"Batch report: {report_path}")
+                log("info", f"Báo cáo tổng hợp: {report_path}")
                 out_dir = report_path.parent
             else:
                 out_dir = (output_path.parent if output_path is not None else input_path.parent)
             self._log_queue.put(("__done__", (worst, out_dir)))
         except Exception as exc:
-            log("critical", f"System error: {exc}")
+            log("critical", f"Lỗi hệ thống: {exc}")
             self._log_queue.put(("__done__", (3, None)))
 
     def _clear_log(self) -> None:
@@ -280,8 +400,7 @@ class App:
                     self._last_output_dir = out_dir
                     if out_dir is not None:
                         self.open_output_button["state"] = "normal"
-                    labels = {0: "OK", 1: "CANH BAO", 2: "LOI NGHIEM TRONG", 3: "LOI HE THONG"}
-                    self._append_log("info", f"--- Hoan tat: {labels.get(worst, worst)} ---")
+                    self._append_log("info", f"--- Hoàn tất: {_RESULT_LABELS.get(worst, worst)} ---")
                 else:
                     self._append_log(level, payload)
         except queue.Empty:
