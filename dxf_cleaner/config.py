@@ -23,8 +23,8 @@ class DedupeConfig(BaseModel):
 
 
 class DespeckleConfig(BaseModel):
-    min_perimeter: float = 0.5
-    min_area: float = 0.1
+    min_perimeter: float = 0.15
+    min_area: float = 0.02
 
 
 class WeldConfig(BaseModel):
@@ -44,6 +44,7 @@ class ValidateConfig(BaseModel):
     material_thickness: float = 2.0
     kerf_width: float = 0.15
     min_hole_diameter_ratio: float = 1.0
+    min_cut_width: float = 0.7
 
 
 class OutputConfig(BaseModel):
@@ -57,8 +58,9 @@ class RasterConfig(BaseModel):
     threshold: int | None = None
     invert: bool = False
     min_area_px: float = 20.0
-    smooth_sigma: float = 1.0
+    smooth_sigma: float = 0.4
     prune_mm: float = 5.0
+    circle_fit_tolerance_mm: float = 0.05
 
 
 class Config(BaseModel):

@@ -123,16 +123,12 @@ def validate(
 
     min_feature_width_mm = stats.get("min_feature_width_mm")
     if min_feature_width_mm is not None:
-        thickness = config.material_thickness
-        if min_feature_width_mm < thickness:
+        min_cut_width = config.min_cut_width
+        if min_feature_width_mm < min_cut_width:
             critical.append(
-                f"Thinnest feature {min_feature_width_mm:.2f}mm is narrower than the "
-                f"material thickness {thickness:.2f}mm -- cannot cut"
-            )
-        elif min_feature_width_mm < 2 * thickness:
-            warnings.append(
-                f"Thinnest feature {min_feature_width_mm:.2f}mm is narrower than 2x the "
-                f"material thickness ({2 * thickness:.2f}mm) -- risk of warping/burn"
+                f"Thinnest traced feature {min_feature_width_mm:.2f}mm is narrower than the "
+                f"minimum cuttable width {min_cut_width:.2f}mm -- likely a PNG tracing "
+                f"artifact (low-res source, jagged threshold edge, or anti-aliasing)"
             )
 
     n_parts = stats.get("n_parts")

@@ -1,3 +1,5 @@
+import math
+
 import numpy as np
 import cv2
 from PIL import Image
@@ -7,7 +9,7 @@ from scipy.ndimage import distance_transform_edt
 from skimage.morphology import skeletonize
 
 from dxf_cleaner.config import Config
-from dxf_cleaner.model import Contour, Segment, Diagnostic
+from dxf_cleaner.model import Contour, Segment, Diagnostic, Point
 from dxf_cleaner.reader import ReadResult
 
 
@@ -113,6 +115,53 @@ def render_preview(
     cv2.imwrite(out_path, preview)
 
 
+def _fit_circle_mm(ring_mm: np.ndarray, tolerance_mm: float) -> tuple[Point, float] | None:
+    """Least-squares (Kasa) circle fit over a closed ring's mm-space points.
+
+    Marching squares always discretizes a hole into a many-sided polygon --
+    never a true CIRCLE/ARC -- so without this, every round screw hole would
+    be written to the DXF as a faceted N-gon. Returns None (keep the polygon)
+    unless every point sits within `tolerance_mm` of the fitted circle, so
+    non-circular shapes (mountains, letters, ...) are never coerced into an
+    arc."""
+    pts = ring_mm[:-1] if len(ring_mm) > 1 and np.allclose(ring_mm[0], ring_mm[-1]) else ring_mm
+    if len(pts) < 8:
+        return None
+    x, y = pts[:, 0], pts[:, 1]
+    a = np.column_stack([2 * x, 2 * y, np.ones_like(x)])
+    b = x ** 2 + y ** 2
+    sol, *_ = np.linalg.lstsq(a, b, rcond=None)
+    cx, cy = float(sol[0]), float(sol[1])
+    r_sq = sol[2] + cx ** 2 + cy ** 2
+    if r_sq <= 0:
+        return None
+    radius = float(math.sqrt(r_sq))
+    residuals = np.abs(np.hypot(x - cx, y - cy) - radius)
+    if residuals.max() > max(tolerance_mm, 0.02 * radius):
+        return None
+    return (cx, cy), radius
+
+
+def _circle_ring_to_contour(ring_mm: np.ndarray, center: Point, radius: float, index: int) -> Contour:
+    """Build the same two-half-circle-arc shape `flatten.py` produces for a
+    native CIRCLE entity, so raster-traced holes round-trip identically."""
+    cx, cy = center
+    n = len(ring_mm) - 1 if np.allclose(ring_mm[0], ring_mm[-1]) else len(ring_mm)
+    area2 = sum(
+        ring_mm[i][0] * ring_mm[(i + 1) % n][1] - ring_mm[(i + 1) % n][0] * ring_mm[i][1]
+        for i in range(n)
+    )
+    ccw = area2 > 0
+    p_start = (float(ring_mm[0][0]), float(ring_mm[0][1]))
+    angle_start = math.atan2(p_start[1] - cy, p_start[0] - cx)
+    angle_mid = angle_start + (math.pi if ccw else -math.pi)
+    p_mid = (cx + radius * math.cos(angle_mid), cy + radius * math.sin(angle_mid))
+    seg1 = Segment(kind="arc", start=p_start, end=p_mid, center=center, radius=radius, ccw=ccw)
+    seg2 = Segment(kind="arc", start=p_mid, end=p_start, center=center, radius=radius, ccw=ccw)
+    return Contour(segments=[seg1, seg2], is_closed=True, source_layer="CUT",
+                    source_handle=f"raster-{index}")
+
+
 def _ring_to_contour(ring_mm: np.ndarray, index: int) -> Contour:
     points = [(float(x), float(y)) for x, y in ring_mm]
     if len(points) > 1 and points[0] == points[-1]:
@@ -198,7 +247,11 @@ def read_raster(
             (ring_px[:, 0] - x0) * mm_per_px,
             (y1 - ring_px[:, 1]) * mm_per_px,  # flip Y so DXF Y grows upward
         ])
-        contours.append(_ring_to_contour(ring_mm, i))
+        circle_fit = _fit_circle_mm(ring_mm, raster_config.circle_fit_tolerance_mm)
+        if circle_fit is not None:
+            contours.append(_circle_ring_to_contour(ring_mm, circle_fit[0], circle_fit[1], i))
+        else:
+            contours.append(_ring_to_contour(ring_mm, i))
 
     prune_iterations = int(max(3, min(120, round(raster_config.prune_mm / mm_per_px))))
     min_width_px, n_parts, dist, skel = measure_min_width_px(mask, prune_iterations)
@@ -215,7 +268,7 @@ def read_raster(
         "mask": mask,
         "dist": dist,
         "skel": skel,
-        "thin_threshold_px": 2 * config.validate.material_thickness / mm_per_px,
+        "thin_threshold_px": config.validate.min_cut_width / mm_per_px,
         "rings_px_by_handle": {
             contour.source_handle: ring_px for contour, ring_px in zip(contours, rings_px)
         },
