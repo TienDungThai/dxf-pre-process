@@ -178,26 +178,28 @@ def test_genuinely_overlapping_parts_produce_an_overlap_warning():
     assert not any("kerf" in w for w in report.warnings)
 
 
-def test_min_feature_width_below_thickness_is_critical():
+def test_min_feature_width_below_cut_width_is_critical():
+    # min_feature_width_mm is checked against the fixed min_cut_width
+    # (the machine's minimum cuttable width), not material_thickness --
+    # see validate.py's min_feature_width_mm block.
     part = Part(exterior=_square_contour(0, 0, 100, "A"))
-    stats = dict(BASE_STATS, min_feature_width_mm=1.0)
-    config = ValidateConfig(material_thickness=2.0)
+    stats = dict(BASE_STATS, min_feature_width_mm=0.5)
+    config = ValidateConfig(min_cut_width=0.7)
 
     report = validate([part], [], config, stats)
 
     assert report.level == "critical"
-    assert any("1.0" in c or "1.00" in c for c in report.critical)
+    assert any("0.5" in c or "0.50" in c for c in report.critical)
 
 
-def test_min_feature_width_below_double_thickness_is_warning():
+def test_min_feature_width_at_cut_width_is_ok():
     part = Part(exterior=_square_contour(0, 0, 100, "A"))
-    stats = dict(BASE_STATS, min_feature_width_mm=3.0)
-    config = ValidateConfig(material_thickness=2.0)
+    stats = dict(BASE_STATS, min_feature_width_mm=0.7)
+    config = ValidateConfig(min_cut_width=0.7)
 
     report = validate([part], [], config, stats)
 
-    assert report.level == "warning"
-    assert any("3.0" in w or "3.00" in w for w in report.warnings)
+    assert report.level == "ok"
 
 
 def test_min_feature_width_above_double_thickness_is_ok():

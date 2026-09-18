@@ -166,9 +166,9 @@ def test_directory_mode_picks_up_png_files(tmp_path):
     assert (output_dir / "a.clean.dxf").exists()
 
 
-def test_thickness_flag_overrides_material_thickness_and_flags_thin_feature(tmp_path):
+def test_min_cut_width_config_override_flags_thin_feature(tmp_path):
     # A thin bar 5px wide, on a 200x200 image stretched to width_mm=200 (mm_per_px=1.0),
-    # so the traced feature is ~5mm wide -- well under a 10mm thickness.
+    # so the traced feature is ~5mm wide.
     size = 200
     img = np.full((size, size, 3), 255, dtype=np.uint8)
     img[20:80, 20:80] = 0     # thick block
@@ -177,15 +177,19 @@ def test_thickness_flag_overrides_material_thickness_and_flags_thin_feature(tmp_
     path = tmp_path / "thin.png"
     Image.fromarray(img, mode="RGB").save(path)
 
-    # Measured min_feature_width_mm for this shape is ~12.5mm -- well under a
-    # 20mm thickness, but well above a 2mm default, so -t 20 must be the one
-    # thing turning this into a critical "cannot cut" result.
+    # min_feature_width_mm is checked against validate.min_cut_width (the
+    # machine's minimum cuttable width) -- NOT material_thickness. The
+    # measured ~12.5mm feature is well above the 0.7mm default, so only
+    # raising min_cut_width past it (via config) should make this critical.
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("validate:\n  min_cut_width: 20\n")
+
     result = CliRunner().invoke(
-        main, [str(path), "-o", str(tmp_path / "out.dxf"), "-w", "200", "-t", "20"]
+        main, [str(path), "-o", str(tmp_path / "out.dxf"), "-w", "200", "--config", str(config_path)]
     )
 
     assert result.exit_code == 2
-    assert "cannot cut" in result.output
+    assert "narrower than the minimum cuttable width" in result.output
 
 
 def test_thickness_flag_short_and_long_form_both_work(tmp_path):

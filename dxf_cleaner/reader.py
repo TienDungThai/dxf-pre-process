@@ -5,7 +5,20 @@ from ezdxf.math import bulge_to_arc
 from dxf_cleaner.config import Config
 from dxf_cleaner.model import Diagnostic, Segment, Contour, Point
 
-_SUPPORTED_UNIT_SCALES = {1: 25.4, 4: 1.0}
+# AutoCAD $INSUNITS code -> factor to convert that unit into mm. Covers every
+# unit a real-world mechanical DXF is plausibly authored in; exotic codes
+# (angstroms, light years, ...) fall through to the unsupported-critical path
+# below rather than guessing.
+_SUPPORTED_UNIT_SCALES = {
+    1: 25.4,       # inches
+    2: 304.8,      # feet
+    4: 1.0,        # millimeters
+    5: 10.0,       # centimeters
+    6: 1000.0,     # meters
+    10: 914.4,     # yards
+    13: 0.001,     # microns
+    14: 100.0,     # decimeters
+}
 _ASSUMED_UNIT_SCALES = {"mm": 1.0, "inch": 25.4}
 
 
@@ -19,9 +32,14 @@ def determine_unit_scale(doc, config: Config) -> tuple[float, Diagnostic | None]
             code="ASSUMED_UNIT",
             message=f"$INSUNITS not set in file; assuming {config.input.assumed_unit} per config",
         )
+    # Refuse to guess: silently treating an unrecognized unit as mm can
+    # produce a wrong-by-orders-of-magnitude cut file (see UNSUPPORTED_INSUNITS
+    # in validate.py, which escalates this to critical -- output is NOT written
+    # unless --force is used).
     return 1.0, Diagnostic(
         code="UNSUPPORTED_INSUNITS",
-        message=f"$INSUNITS={insunits} is not supported (only mm/inch); treating as mm",
+        message=f"$INSUNITS={insunits} is not a recognized length unit; refusing to guess a scale "
+                f"(treated as 1:1, almost certainly wrong -- re-export the DXF in mm or inches)",
     )
 
 

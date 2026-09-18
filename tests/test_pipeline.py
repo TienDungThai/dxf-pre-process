@@ -263,20 +263,33 @@ def test_run_pipeline_on_png_input_simplifies_traced_contours(tmp_path):
     # read_raster returned flattened_handles=set(), so simplify_contours
     # (which only touches contours whose source_handle is in
     # touched_handles = flattened_handles | welded_handles) skipped every
-    # raster contour regardless of config.simplify.tolerance. A traced
-    # circle has hundreds of marching-squares vertices, so simplification
-    # must visibly reduce the node count.
+    # raster contour regardless of config.simplify.tolerance.
+    #
+    # A traced CIRCLE is the wrong shape to test this with: raster.py's own
+    # circle-fit collapses it to 2 clean arc segments before simplify ever
+    # runs (by design, see raster.py's _fit_circle_mm), so node_count_after
+    # == node_count_before == 2 regardless of whether simplify touched it.
+    # A rotated square instead has straight edges that marching-squares
+    # rasterizes into a pixel staircase of many near-collinear points --
+    # exactly the line-simplification path this regression test targets --
+    # while reliably failing the circular-fit residual check.
     import numpy as np
+    import cv2
     from PIL import Image
     from dxf_cleaner.pipeline import run_pipeline
     from dxf_cleaner.config import Config
 
     size = 300
     img = np.full((size, size, 3), 255, dtype=np.uint8)
-    yy, xx = np.mgrid[0:size, 0:size]
-    circle = (xx - size // 2) ** 2 + (yy - size // 2) ** 2 <= 130 ** 2
-    img[circle] = 0
-    path = tmp_path / "circle.png"
+    center, half_diagonal = size // 2, 130
+    diamond = np.array([
+        [center, center - half_diagonal],
+        [center + half_diagonal, center],
+        [center, center + half_diagonal],
+        [center - half_diagonal, center],
+    ])
+    cv2.fillPoly(img, [diamond], (0, 0, 0))
+    path = tmp_path / "diamond.png"
     Image.fromarray(img, mode="RGB").save(path)
 
     result = run_pipeline(str(path), Config(), width_mm=160.0)

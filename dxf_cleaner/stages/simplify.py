@@ -35,7 +35,12 @@ def _merge_collinear_lines(segments: list[Segment], collinear_angle_deg: float, 
 
 def _points_to_line_segments(points: list[Point], is_closed: bool) -> list[Segment]:
     count = len(points) if is_closed else len(points) - 1
-    return [Segment(kind="line", start=points[i], end=points[(i + 1) % len(points)]) for i in range(count)]
+    segments = [Segment(kind="line", start=points[i], end=points[(i + 1) % len(points)]) for i in range(count)]
+    # A tiny/degenerate contour can simplify down to a single repeated point;
+    # a zero-length segment surviving to here crashes downstream stages that
+    # divide by segment length (e.g. dedupe._line_group_key), so drop it now
+    # the same way snap.py already does after its own point-merging.
+    return [seg for seg in segments if seg.start != seg.end]
 
 
 def _simplify_one(contour: Contour, tolerance: float, collinear_angle_deg: float,

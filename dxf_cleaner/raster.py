@@ -123,7 +123,9 @@ def _fit_circle_mm(ring_mm: np.ndarray, tolerance_mm: float) -> tuple[Point, flo
     be written to the DXF as a faceted N-gon. Returns None (keep the polygon)
     unless every point sits within `tolerance_mm` of the fitted circle, so
     non-circular shapes (mountains, letters, ...) are never coerced into an
-    arc."""
+    arc. Callers should scale `tolerance_mm` with the image's mm/px so that
+    low-DPI tracing noise (which is several px wide) doesn't reject genuine
+    circles."""
     pts = ring_mm[:-1] if len(ring_mm) > 1 and np.allclose(ring_mm[0], ring_mm[-1]) else ring_mm
     if len(pts) < 8:
         return None
@@ -215,12 +217,16 @@ def read_raster(
     span_w_px, span_h_px = x1 - x0, y1 - y0
 
     if width_mm is not None:
+        if width_mm <= 0:
+            raise ValueError(f"width_mm must be greater than 0, got {width_mm}")
         if span_w_px == 0:
             raise ValueError(
                 "Traced image has zero width/height -- check min_area_px and the input image"
             )
         mm_per_px = width_mm / span_w_px
     elif height_mm is not None:
+        if height_mm <= 0:
+            raise ValueError(f"height_mm must be greater than 0, got {height_mm}")
         if span_h_px == 0:
             raise ValueError(
                 "Traced image has zero width/height -- check min_area_px and the input image"
@@ -247,7 +253,11 @@ def read_raster(
             (ring_px[:, 0] - x0) * mm_per_px,
             (y1 - ring_px[:, 1]) * mm_per_px,  # flip Y so DXF Y grows upward
         ])
-        circle_fit = _fit_circle_mm(ring_mm, raster_config.circle_fit_tolerance_mm)
+        circle_tolerance_mm = max(
+            raster_config.circle_fit_tolerance_mm,
+            raster_config.circle_fit_tolerance_px * mm_per_px,
+        )
+        circle_fit = _fit_circle_mm(ring_mm, circle_tolerance_mm)
         if circle_fit is not None:
             contours.append(_circle_ring_to_contour(ring_mm, circle_fit[0], circle_fit[1], i))
         else:

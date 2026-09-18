@@ -27,6 +27,10 @@ def _click_log(level: str, message: str) -> None:
               help="Only report; never write an output DXF. Note: for raster input, the "
                    "<stem>_KIEMTRA.png preview image is still written even in check mode, "
                    "and in directory mode BAO-CAO.csv is still written too.")
+@click.option("--force", is_flag=True, default=False,
+              help="Write the output DXF even when validation reports a critical issue "
+                   "(e.g. a cut feature thinner than the machine's minimum width). The "
+                   "critical warnings are still printed -- this only skips the write-block.")
 @click.option("--snap-tol", type=float, default=None, help="Override snap.tolerance.")
 @click.option("--weld-mode", type=click.Choice(["off", "overlapping", "all"]), default=None,
               help="Override weld.mode.")
@@ -43,12 +47,20 @@ def _click_log(level: str, message: str) -> None:
 @click.option("-t", "--thickness", type=float, default=None,
               help="Override validate.material_thickness (sheet metal thickness, mm).")
 def main(input_path: Path, output_path: Path | None, config_path: Path | None, check: bool,
-         snap_tol: float | None, weld_mode: str | None, no_simplify: bool,
+         force: bool, snap_tol: float | None, weld_mode: str | None, no_simplify: bool,
          width_mm: float | None, height_mm: float | None, px_per_mm: float | None,
          invert: bool, raster_threshold: int | None, thickness: float | None) -> None:
     """Clean a DXF file, or a PNG/JPG raster image, (or a directory of either) for laser cutting."""
     if width_mm is not None and height_mm is not None:
         raise click.UsageError("--width-mm and --height-mm are mutually exclusive")
+    if px_per_mm is not None and (width_mm is not None or height_mm is not None):
+        raise click.UsageError(
+            "--px-per-mm cannot be combined with --width-mm/--height-mm -- "
+            "width/height mm take priority and --px-per-mm would be silently ignored"
+        )
+    for flag_name, value in (("--px-per-mm", px_per_mm), ("--width-mm", width_mm), ("--height-mm", height_mm)):
+        if value is not None and value <= 0:
+            raise click.UsageError(f"{flag_name} must be greater than 0, got {value}")
 
     config = load_config(str(config_path) if config_path else None)
     config = apply_overrides(config, snap_tol, weld_mode, no_simplify)
@@ -57,7 +69,7 @@ def main(input_path: Path, output_path: Path | None, config_path: Path | None, c
 
     try:
         worst, report_path = process_path(
-            input_path, output_path, config, check, _click_log, width_mm, height_mm
+            input_path, output_path, config, check, _click_log, width_mm, height_mm, force
         )
         if report_path is not None:
             click.echo(f"Batch report: {report_path}")

@@ -14,12 +14,14 @@ _CRITICAL_CODES = {
     # Same underlying problem as OPEN_CONTOUR_SKIPPED_FROM_HIERARCHY: a shape
     # that should have been closed no longer is.
     "CONTOUR_OPENED_BY_DEDUPE",
+    # An unrecognized $INSUNITS was treated as 1:1 -- a wrong-by-orders-of-
+    # magnitude cut file is worse than refusing to write one (see reader.py).
+    "UNSUPPORTED_INSUNITS",
 }
 _WARNING_CODES = {
     # A self-intersecting shape was silently repaired -- the operator should know.
     "INVALID_POLYGON_FIXED",
     "3D_POLYLINE_PROJECTED",
-    "UNSUPPORTED_INSUNITS",
     # Simplify skipped a contour because it would have deviated area beyond the
     # configured limit -- the operator should know it kept the denser original.
     "SIMPLIFY_REVERTED_AREA_DEVIATION",
@@ -27,6 +29,10 @@ _WARNING_CODES = {
     # hole/island fully contained inside another contour -- the containment
     # is silently absorbed by unary_union, so the operator should know.
     "HOLES_LOST_IN_WELD_ALL",
+    # A contour that looked like a hole by nesting depth couldn't be matched
+    # to its parent boundary (see hierarchy.py) -- it was dropped instead of
+    # silently vanishing from the output with no trace.
+    "HOLE_DROPPED_PARITY_MISMATCH",
     # Raster-input diagnostics: computed numbers worth surfacing (actual DPI,
     # fill/border ratios) rather than silently dropped.
     "RASTER_LOW_DPI",
@@ -44,6 +50,11 @@ _WARNING_CODES_WITH_OWN_MESSAGE = {
     "RASTER_LOW_DPI",
     "RASTER_POSSIBLE_INVERTED",
     "PREVIEW_INCOMPLETE",
+}
+# Same idea for critical codes -- e.g. UNSUPPORTED_INSUNITS's message names
+# the actual $INSUNITS value found, which the operator needs to fix the file.
+_CRITICAL_CODES_WITH_OWN_MESSAGE = {
+    "UNSUPPORTED_INSUNITS",
 }
 # Codes that are normal, expected cleanup actions. They are deliberately NOT
 # escalated to warnings; they are counted into the report's info block so they
@@ -83,7 +94,9 @@ def validate(
     diag_codes = [d.code for d in diagnostics]
     for diag in diagnostics:
         code = diag.code
-        if code in _CRITICAL_CODES:
+        if code in _CRITICAL_CODES_WITH_OWN_MESSAGE:
+            critical.append(f"{code}: {diag.message}")
+        elif code in _CRITICAL_CODES:
             critical.append(f"{code}: see diagnostics for details")
         elif code in _DROPPED_ENTITY_CODES:
             warnings.append(f"Entity dropped ({code})")

@@ -11,6 +11,7 @@ from tkinter import filedialog, messagebox, ttk
 
 from dxf_cleaner.config import load_config
 from dxf_cleaner.core import (
+    RASTER_SUFFIXES,
     apply_overrides,
     apply_raster_overrides,
     apply_thickness_override,
@@ -54,6 +55,7 @@ class App:
         self.input_path_var = tk.StringVar()
         self.output_path_var = tk.StringVar()
         self.check_var = tk.BooleanVar(value=False)
+        self.force_var = tk.BooleanVar(value=False)
         self.snap_tol_var = tk.StringVar()
         self.weld_mode_var = tk.StringVar(value="")
         self.no_simplify_var = tk.BooleanVar(value=False)
@@ -129,14 +131,25 @@ class App:
             variable=self.check_var,
         ).grid(row=0, column=0, columnspan=2, sticky="w", padx=6, pady=2)
 
-        ttk.Label(general_frame, text="Độ dày vật liệu / tôn (mm):").grid(row=1, column=0, sticky="w", padx=6)
+        ttk.Checkbutton(
+            general_frame,
+            text="Vẫn ghi file DXF dù có LỖI NGHIÊM TRỌNG (ví dụ nét/lỗ quá mảnh để cắt)",
+            variable=self.force_var,
+        ).grid(row=1, column=0, columnspan=2, sticky="w", padx=6, pady=2)
+        ttk.Label(
+            general_frame,
+            text="Cẩn thận: các cảnh báo vẫn hiện đầy đủ bên dưới -- hãy đọc kỹ trước khi đưa file đi cắt.",
+            **_HINT_STYLE,
+        ).grid(row=2, column=0, columnspan=2, sticky="w", padx=6, pady=(0, 4))
+
+        ttk.Label(general_frame, text="Độ dày vật liệu / tôn (mm):").grid(row=3, column=0, sticky="w", padx=6)
         ttk.Entry(general_frame, textvariable=self.thickness_var, width=10) \
-            .grid(row=1, column=1, sticky="w", padx=6)
+            .grid(row=3, column=1, sticky="w", padx=6)
         ttk.Label(
             general_frame,
             text="Dùng để kiểm tra nét/lỗ có đủ rộng để cắt không (mặc định 2.0mm nếu để trống).",
             **_HINT_STYLE,
-        ).grid(row=2, column=0, columnspan=2, sticky="w", padx=6, pady=(0, 4))
+        ).grid(row=4, column=0, columnspan=2, sticky="w", padx=6, pady=(0, 4))
 
         # -- Làm sạch nét -------------------------------------------
         clean_frame = ttk.LabelFrame(self.root, text="Làm sạch nét (áp dụng cho cả DXF và ảnh)")
@@ -310,6 +323,11 @@ class App:
         s = s.strip()
         return int(s) if s else None
 
+    def _is_raster_input(self, path: Path) -> bool:
+        if path.is_dir():
+            return any(f.suffix.lower() in RASTER_SUFFIXES for f in path.iterdir())
+        return path.suffix.lower() in RASTER_SUFFIXES
+
     def _on_run_clicked(self) -> None:
         if self._worker is not None and self._worker.is_alive():
             return
@@ -330,15 +348,33 @@ class App:
 
             width_mm = height_mm = px_per_mm = None
             mode = self.raster_scale_mode.get()
+            is_raster_input = self._is_raster_input(input_path)
             if mode == "width":
                 width_mm = self._float_or_none(self.width_mm_var.get())
+                if is_raster_input and width_mm is None:
+                    messagebox.showerror("Lỗi", "Đã chọn 'Theo chiều rộng thật (mm)' nhưng ô này đang trống.")
+                    return
             elif mode == "height":
                 height_mm = self._float_or_none(self.height_mm_var.get())
+                if is_raster_input and height_mm is None:
+                    messagebox.showerror("Lỗi", "Đã chọn 'Theo chiều cao thật (mm)' nhưng ô này đang trống.")
+                    return
             else:
                 dpi = self._float_or_none(self.dpi_var.get())
+                if is_raster_input and dpi is None:
+                    messagebox.showerror("Lỗi", "Đã chọn 'Theo độ phân giải ảnh gốc (DPI)' nhưng ô này đang trống.")
+                    return
                 px_per_mm = (dpi / MM_PER_INCH) if dpi is not None else None
         except ValueError:
             messagebox.showerror("Lỗi", "Các trường số phải là số hợp lệ.")
+            return
+
+        for label, value in (("chiều rộng (mm)", width_mm), ("chiều cao (mm)", height_mm)):
+            if value is not None and value <= 0:
+                messagebox.showerror("Lỗi", f"Giá trị {label} phải lớn hơn 0.")
+                return
+        if px_per_mm is not None and px_per_mm <= 0:
+            messagebox.showerror("Lỗi", "DPI phải lớn hơn 0.")
             return
 
         output_str = self.output_path_var.get().strip()
@@ -355,20 +391,23 @@ class App:
         self.run_button["state"] = "disabled"
         self.open_output_button["state"] = "disabled"
         check = self.check_var.get()
+        force = self.force_var.get()
 
         self._worker = threading.Thread(
             target=self._run_worker,
-            args=(input_path, output_path, config, check, width_mm, height_mm),
+            args=(input_path, output_path, config, check, force, width_mm, height_mm),
             daemon=True,
         )
         self._worker.start()
 
-    def _run_worker(self, input_path, output_path, config, check, width_mm, height_mm) -> None:
+    def _run_worker(self, input_path, output_path, config, check, force, width_mm, height_mm) -> None:
         def log(level: str, message: str) -> None:
             self._log_queue.put((level, message))
 
         try:
-            worst, report_path = process_path(input_path, output_path, config, check, log, width_mm, height_mm)
+            worst, report_path = process_path(
+                input_path, output_path, config, check, log, width_mm, height_mm, force
+            )
             if report_path is not None:
                 log("info", f"Báo cáo tổng hợp: {report_path}")
                 out_dir = report_path.parent

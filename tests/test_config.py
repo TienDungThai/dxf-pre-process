@@ -41,8 +41,8 @@ def test_new_phase2_config_defaults():
     assert cfg.snap.max_reportable_gap == 2.0
     assert cfg.dedupe.enabled is True
     assert cfg.dedupe.merge_common_edges is False
-    assert cfg.despeckle.min_perimeter == 0.5
-    assert cfg.despeckle.min_area == 0.1
+    assert cfg.despeckle.min_perimeter == 0.15
+    assert cfg.despeckle.min_area == 0.02
     assert cfg.validate.sheet_width == 1500
     assert cfg.validate.sheet_height == 3000
     assert cfg.validate.material_thickness == 2.0
@@ -60,7 +60,7 @@ def test_phase2_config_yaml_override(tmp_path):
     assert cfg.snap.tolerance == 0.1
     assert cfg.dedupe.merge_common_edges is True
     # untouched sections keep defaults
-    assert cfg.despeckle.min_area == 0.1
+    assert cfg.despeckle.min_area == 0.02
 
 
 # Task 1: WeldConfig and SimplifyConfig
@@ -90,5 +90,5 @@ def test_raster_config_defaults():
     assert config.raster.threshold is None
     assert config.raster.invert is False
     assert config.raster.min_area_px == 20.0
-    assert config.raster.smooth_sigma == 1.0
+    assert config.raster.smooth_sigma == 0.4
     assert config.raster.prune_mm == 5.0

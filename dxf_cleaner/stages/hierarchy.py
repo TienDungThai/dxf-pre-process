@@ -65,7 +65,22 @@ def build_hierarchy(contours: list[Contour], arc_tolerance: float = 0.02) -> tup
         for i in range(n) if depth[i] % 2 == 0
     }
     for i in range(n):
-        if depth[i] % 2 == 1 and parent_of[i] is not None and parent_of[i] in parts:
+        if depth[i] % 2 != 1:
+            continue
+        if parent_of[i] is not None and parent_of[i] in parts:
             parts[parent_of[i]].interiors.append(_oriented_contour(valid_closed[i], ccw=False))
+        else:
+            # depth[i] is odd (this contour is contained in an odd number of
+            # others) but its immediate parent didn't land at an even depth --
+            # only possible when repairing a self-intersecting polygon
+            # (make_valid above) skewed the containment nesting parity.
+            # Dropping the hole silently would let it vanish from the DXF
+            # with zero trace, so it's reported instead of swallowed.
+            diagnostics.append(Diagnostic(
+                code="HOLE_DROPPED_PARITY_MISMATCH",
+                message="Contour looked like a hole (odd nesting depth) but its parent boundary "
+                        "was not found; excluded from output instead of guessing",
+                handle=valid_closed[i].source_handle,
+            ))
 
     return list(parts.values()), diagnostics

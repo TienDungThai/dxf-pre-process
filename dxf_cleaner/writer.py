@@ -4,15 +4,19 @@ from dxf_cleaner.config import Config
 from dxf_cleaner.model import Contour, Segment, contour_as_full_circle, contour_bbox
 
 
-def _arc_bulge(seg: Segment) -> float:
+def _sweep_angle(seg: Segment) -> float:
+    """The arc's swept angle in [0, 2*pi), derived from start/end/center/ccw."""
     cx, cy = seg.center
     a_start = math.atan2(seg.start[1] - cy, seg.start[0] - cx)
     a_end = math.atan2(seg.end[1] - cy, seg.end[0] - cx)
     two_pi = 2 * math.pi
     if seg.ccw:
-        theta = (a_end - a_start) % two_pi
-    else:
-        theta = (a_start - a_end) % two_pi
+        return (a_end - a_start) % two_pi
+    return (a_start - a_end) % two_pi
+
+
+def _arc_bulge(seg: Segment) -> float:
+    theta = _sweep_angle(seg)
     magnitude = math.tan(theta / 4)
     return magnitude if seg.ccw else -magnitude
 
@@ -23,26 +27,37 @@ def _write_circle(msp, contour: Contour, layer: str) -> None:
 
 
 _FULL_SWEEP_TOL = 1e-9
+# How close (in radians) the swept angle may get to a full 2*pi turn before
+# tan(theta/4) is treated as unsafe to write directly (it diverges at
+# theta == 2*pi). 1e-6 rad at a 1000mm radius arc is a ~1um positional error,
+# far below any laser/CNC tolerance, so treating it as a full sweep is safe.
+_FULL_SWEEP_ANGLE_TOL = 1e-6
 
 
 def _split_full_sweep_arcs(segments: list[Segment]) -> list[Segment]:
-    """Split any full-sweep arc (start == end, i.e. a whole circle encoded as one
-    arc segment) into two half-circle arcs.
+    """Split any near-full-sweep arc into two half-circle arcs.
 
-    A full-sweep arc has a bulge angle of 2*pi, and `tan(theta/4)` computed from
-    the modulo-reduced angle collapses to 0 -- which would write the arc as a
-    zero-length straight line. Splitting matches how CIRCLE entities and the
-    spline circular-detection already represent a full circle (two arcs), so the
-    bulge of each half is well defined (+/-1).
+    A full-sweep arc (start == end exactly, i.e. a whole circle encoded as one
+    arc segment) reduces its modulo-wrapped angle to 0, and `tan(theta/4)`
+    would then write it as a zero-length straight line. A NEARLY-full sweep
+    (start and end a hair apart -- e.g. after snap/weld floating-point
+    rounding) is worse: depending on which side the rounding error falls,
+    the wrapped angle can come out just *under* 2*pi instead of just over 0,
+    and `tan(theta/4)` explodes toward the asymptote at theta == 2*pi,
+    writing a huge/garbage bulge into the DXF. Both cases are handled the
+    same way CIRCLE entities and the spline circular-detection already
+    represent a full circle (two half-circle arcs from the start point),
+    so the bulge of each half is always well defined (+/-1) regardless of
+    which way the original near-zero chord rounded.
     """
     out: list[Segment] = []
     for seg in segments:
-        if (
-            seg.kind == "arc"
-            and seg.center is not None
-            and seg.radius is not None
-            and math.dist(seg.start, seg.end) < _FULL_SWEEP_TOL
-        ):
+        if seg.kind != "arc" or seg.center is None or seg.radius is None:
+            out.append(seg)
+            continue
+        is_exact_closure = math.dist(seg.start, seg.end) < _FULL_SWEEP_TOL
+        is_near_full_turn = _sweep_angle(seg) > (2 * math.pi - _FULL_SWEEP_ANGLE_TOL)
+        if is_exact_closure or is_near_full_turn:
             cx, cy = seg.center
             a0 = math.atan2(seg.start[1] - cy, seg.start[0] - cx)
             a_mid = a0 + (math.pi if seg.ccw else -math.pi)

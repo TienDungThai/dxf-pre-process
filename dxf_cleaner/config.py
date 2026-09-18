@@ -1,6 +1,6 @@
 from typing import Literal
 import yaml
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class InputConfig(BaseModel):
@@ -54,13 +54,14 @@ class OutputConfig(BaseModel):
 
 
 class RasterConfig(BaseModel):
-    pixels_per_mm: float | None = None
+    pixels_per_mm: float | None = Field(default=None, gt=0)
     threshold: int | None = None
     invert: bool = False
     min_area_px: float = 20.0
     smooth_sigma: float = 0.4
     prune_mm: float = 5.0
-    circle_fit_tolerance_mm: float = 0.05
+    circle_fit_tolerance_mm: float = 0.12
+    circle_fit_tolerance_px: float = 1.5
 
 
 class Config(BaseModel):

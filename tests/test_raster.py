@@ -150,7 +150,12 @@ def test_read_raster_produces_closed_line_contours_with_stats(tmp_path):
     assert len(result.contours) == 2
     for contour in result.contours:
         assert contour.is_closed
-        assert all(seg.kind == "line" for seg in contour.segments)
+    # trace_mask sorts rings largest-area-first: the square exterior stays a
+    # straight-edged polygon, but the round hole is a genuine circle -- it's
+    # expected (and desired, see raster.py's _fit_circle_mm) to come back as
+    # 2 arc segments rather than a faceted many-sided polygon.
+    assert all(seg.kind == "line" for seg in result.contours[0].segments)
+    assert all(seg.kind == "arc" for seg in result.contours[1].segments)
 
     stats = result.raster_stats
     assert stats is not None

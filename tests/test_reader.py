@@ -35,8 +35,29 @@ def test_insunits_unset_falls_back_to_assumed_unit_inch_with_warning(new_doc):
     assert diag.code == "ASSUMED_UNIT"
 
 
+def test_insunits_feet_gives_scale_304_8(new_doc):
+    new_doc.header["$INSUNITS"] = 2
+    scale, diag = determine_unit_scale(new_doc, Config())
+    assert scale == 304.8
+    assert diag is None
+
+
+def test_insunits_centimeters_gives_scale_10(new_doc):
+    new_doc.header["$INSUNITS"] = 5
+    scale, diag = determine_unit_scale(new_doc, Config())
+    assert scale == 10.0
+    assert diag is None
+
+
+def test_insunits_meters_gives_scale_1000(new_doc):
+    new_doc.header["$INSUNITS"] = 6
+    scale, diag = determine_unit_scale(new_doc, Config())
+    assert scale == 1000.0
+    assert diag is None
+
+
 def test_unsupported_insunits_warns_and_defaults_to_mm(new_doc):
-    new_doc.header["$INSUNITS"] = 2  # feet — unsupported by this tool
+    new_doc.header["$INSUNITS"] = 11  # angstroms — not a plausible mechanical-drawing unit
     scale, diag = determine_unit_scale(new_doc, Config())
     assert scale == 1.0
     assert diag.code == "UNSUPPORTED_INSUNITS"
@@ -168,6 +189,7 @@ def test_read_dxf_skips_text_and_records_diagnostic(new_doc, tmp_path):
 
 
 def test_read_dxf_explodes_blocks(new_doc, tmp_path):
+    new_doc.header["$INSUNITS"] = 4  # mm, so this test is about block-exploding, not unit scale
     block = new_doc.blocks.new("B1")
     block.add_line((0, 0), (1, 0))
     msp = new_doc.modelspace()

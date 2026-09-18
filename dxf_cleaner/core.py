@@ -27,6 +27,7 @@ def process_one(
     width_mm: float | None = None,
     height_mm: float | None = None,
     batch_rows: list[dict] | None = None,
+    force: bool = False,
 ) -> int:
     """Run the pipeline on one file, report its outcome via `log`, and return
     its exit code (0 ok, 1 warning, 2 critical)."""
@@ -49,12 +50,15 @@ def process_one(
     if batch_rows is not None:
         batch_rows.append({"file": input_path.name, "status": report.level, **report.info})
 
-    if not check and report.level != "critical":
+    if not check and (report.level != "critical" or force):
         target = output_path if output_path is not None else input_path.with_name(
             f"{input_path.stem}.clean.dxf"
         )
         write_pipeline_result(result, str(target), config)
-        log("info", f"  -> wrote {target}")
+        if report.level == "critical":
+            log("warning", f"  -> wrote {target} DESPITE critical warnings above (--force)")
+        else:
+            log("info", f"  -> wrote {target}")
 
     return {"ok": 0, "warning": 1, "critical": 2}[report.level]
 
@@ -120,6 +124,7 @@ def process_path(
     log: LogFn,
     width_mm: float | None = None,
     height_mm: float | None = None,
+    force: bool = False,
 ) -> tuple[int, Path | None]:
     """Process a single file or a directory of files. Returns (worst exit
     code, batch report path or None). Mirrors the CLI's directory-mode
@@ -140,7 +145,7 @@ def process_path(
         for f in files:
             target = (output_path / f"{f.stem}.clean.dxf") if output_path is not None else None
             try:
-                worst = max(worst, process_one(f, target, config, check, log, width_mm, height_mm, batch_rows))
+                worst = max(worst, process_one(f, target, config, check, log, width_mm, height_mm, batch_rows, force))
             except Exception as exc:
                 log("critical", f"{f}: System error: {exc}")
                 batch_rows.append({"file": f.name, "status": "error"})
@@ -149,5 +154,5 @@ def process_path(
         report_path = write_batch_report(batch_rows, report_dir)
         return worst, report_path
     else:
-        code = process_one(input_path, output_path, config, check, log, width_mm, height_mm)
+        code = process_one(input_path, output_path, config, check, log, width_mm, height_mm, force=force)
         return code, None
